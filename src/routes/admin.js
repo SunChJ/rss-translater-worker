@@ -501,6 +501,35 @@ adminRoutes.get('/feeds/:id/edit', async (c) => {
                 <textarea name="additional_prompt" class="form-control" rows="3" placeholder="Additional instructions for translation">${feed.additional_prompt || ''}</textarea>
             </div>
             
+            <div class="form-group" style="background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
+                <label class="form-label">RSS Output URLs</label>
+                <p style="margin: 5px 0;"><strong>RSS:</strong> <code>/feeds/${feed.slug}.rss</code> 
+                   <button type="button" onclick="copyToClipboard(window.location.origin + '/feeds/${feed.slug}.rss')" style="margin-left: 10px; padding: 2px 8px; font-size: 12px;" class="btn">Copy</button>
+                   <a href="/feeds/${feed.slug}.rss" target="_blank" style="margin-left: 5px; padding: 2px 8px; font-size: 12px;" class="btn">Open</a>
+                </p>
+                <p style="margin: 5px 0;"><strong>Atom:</strong> <code>/feeds/${feed.slug}.atom</code>
+                   <button type="button" onclick="copyToClipboard(window.location.origin + '/feeds/${feed.slug}.atom')" style="margin-left: 10px; padding: 2px 8px; font-size: 12px;" class="btn">Copy</button>
+                   <a href="/feeds/${feed.slug}.atom" target="_blank" style="margin-left: 5px; padding: 2px 8px; font-size: 12px;" class="btn">Open</a>
+                </p>
+            </div>
+            
+            <script>
+                function copyToClipboard(text) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        alert('RSS URL copied to clipboard!');
+                    }).catch(() => {
+                        // Fallback for older browsers
+                        const textarea = document.createElement('textarea');
+                        textarea.value = text;
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
+                        alert('RSS URL copied to clipboard!');
+                    });
+                }
+            </script>
+            
             <div style="margin-top: 20px;">
                 <button type="submit" class="btn btn-success">Update Feed</button>
                 <a href="/feeds" class="btn btn-secondary">Cancel</a>
