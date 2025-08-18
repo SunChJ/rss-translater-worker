@@ -1,0 +1,26 @@
+{
+  "name": "rss-translator-worker",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "tail": "wrangler tail",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["rss", "translator", "cloudflare-worker", "translation"],
+  "author": "SunChJ",
+  "license": "MIT",
+  "description": "RSS Translator powered by Cloudflare Workers",
+  "devDependencies": {
+    "wrangler": "^4.30.0"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.2.5",
+    "hono": "^4.9.2",
+    "html2text": "^6.0.0",
+    "node-fetch": "^3.3.2"
+  }
+}

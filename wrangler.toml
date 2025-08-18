@@ -1,0 +1,52 @@
+name = "rss-translator-worker"
+main = "src/index.js"
+compatibility_date = "2024-08-18"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "rss-translator-worker"
+
+[env.staging]
+name = "rss-translator-worker-staging"
+
+# D1 Database for storing feeds, entries, and agents
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "rss-translator"
+database_id = "your-database-id-here"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "rss-translator-staging"
+database_id = "your-staging-database-id-here"
+
+# KV Storage for caching
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "your-kv-id-here"
+preview_id = "your-preview-kv-id-here"
+
+[[env.staging.kv_namespaces]]
+binding = "CACHE"
+id = "your-staging-kv-id-here"
+preview_id = "your-staging-preview-kv-id-here"
+
+# Cron triggers for feed updates
+[triggers]
+crons = ["*/30 * * * *"]
+
+# Environment variables
+[env.production.vars]
+ENVIRONMENT = "production"
+DEFAULT_TARGET_LANGUAGE = "Chinese Simplified"
+LOG_LEVEL = "INFO"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+DEFAULT_TARGET_LANGUAGE = "Chinese Simplified"
+LOG_LEVEL = "DEBUG"
+
+# Secrets (set using wrangler secret put)
+# OPENAI_API_KEY
+# DEEPL_API_KEY
+# FIELD_ENCRYPTION_KEY
