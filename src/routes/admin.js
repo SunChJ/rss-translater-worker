@@ -37,8 +37,8 @@ function getNavigation() {
     return `
         <div class="nav">
             <a href="/">Dashboard</a>
-            <a href="/admin/feeds">RSS Feeds</a>
-            <a href="/admin/agents">Translation Agents</a>
+            <a href="/feeds">RSS Feeds</a>
+            <a href="/agents">Translation Agents</a>
         </div>
     `;
 }
@@ -55,7 +55,7 @@ adminRoutes.get('/', async (c) => {
             <div class="container">
                 <h1>Configuration Required</h1>
                 <p>D1 Database binding is not configured.</p>
-                <a href="/admin/db-status" class="btn">Check Database Status</a>
+                <a href="/db-status" class="btn">Check Database Status</a>
             </div>
         </body>
         </html>
@@ -119,13 +119,13 @@ adminRoutes.get('/', async (c) => {
                             <td>${feed.fetch_status ? '✓ Active' : '✗ Error'}</td>
                             <td>
                                 <a href="/feeds/${feed.slug}.rss" class="btn btn-sm" target="_blank">RSS</a>
-                                <a href="/admin/feeds" class="btn btn-sm">Manage</a>
+                                <a href="/feeds" class="btn btn-sm">Manage</a>
                             </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
-        ` : '<p>No RSS feeds found. <a href="/admin/feeds">Add your first feed</a></p>'}
+        ` : '<p>No RSS feeds found. <a href="/feeds/add">Add your first feed</a></p>'}
         
         <h3>Translation Agents</h3>
         ${agents.results?.length > 0 ? `
@@ -139,7 +139,7 @@ adminRoutes.get('/', async (c) => {
                             <td>${agent.name}</td>
                             <td>${agent.type}</td>
                             <td>${agent.valid ? '✓ Valid' : '✗ Invalid'}</td>
-                            <td><a href="/admin/agents" class="btn btn-sm">Manage</a></td>
+                            <td><a href="/agents" class="btn btn-sm">Manage</a></td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -174,7 +174,7 @@ adminRoutes.get('/feeds', async (c) => {
         <div class="header">
             <h1>RSS Feeds Management</h1>
             ${getNavigation()}
-            <a href="/admin/feeds/add" class="btn btn-success">Add New Feed</a>
+            <a href="/feeds/add" class="btn btn-success">Add New Feed</a>
         </div>
         
         ${feeds.results?.length > 0 ? `
@@ -197,7 +197,7 @@ adminRoutes.get('/feeds', async (c) => {
                             <td>${feed.fetch_status ? '✓ Active' : '✗ Error'}</td>
                             <td>
                                 <a href="/feeds/${feed.slug}.rss" class="btn btn-sm" target="_blank">RSS</a>
-                                <a href="/admin/feeds/${feed.id}/edit" class="btn btn-sm">Edit</a>
+                                <a href="/feeds/${feed.id}/edit" class="btn btn-sm">Edit</a>
                             </td>
                         </tr>
                     `).join('')}
@@ -235,7 +235,7 @@ adminRoutes.get('/feeds/add', async (c) => {
             ${getNavigation()}
         </div>
         
-        <form method="POST" action="/admin/feeds/add">
+        <form method="POST" action="/feeds/add">
             <div class="form-group">
                 <label class="form-label">Feed URL *</label>
                 <input type="url" name="feed_url" class="form-control" required placeholder="https://example.com/feed.rss">
@@ -280,7 +280,7 @@ adminRoutes.get('/feeds/add', async (c) => {
             
             <div style="margin-top: 20px;">
                 <button type="submit" class="btn btn-success">Create Feed</button>
-                <a href="/admin/feeds" class="btn btn-secondary">Cancel</a>
+                <a href="/feeds" class="btn btn-secondary">Cancel</a>
             </div>
         </form>
     </div>
@@ -313,7 +313,7 @@ adminRoutes.post('/feeds/add', async (c) => {
     
     await db.createFeed(feedData);
     
-    return c.redirect('/admin/feeds');
+    return c.redirect('/feeds');
   } catch (error) {
     console.error('Failed to create feed:', error);
     
@@ -343,7 +343,7 @@ adminRoutes.post('/feeds/add', async (c) => {
             <strong>Error:</strong> ${errorMessage}
         </div>
         
-        <form method="POST" action="/admin/feeds/add">
+        <form method="POST" action="/feeds/add">
             <div class="form-group">
                 <label class="form-label">Feed URL *</label>
                 <input type="url" name="feed_url" class="form-control" required placeholder="https://example.com/feed.rss" value="${body.feed_url || ''}">
@@ -388,7 +388,7 @@ adminRoutes.post('/feeds/add', async (c) => {
             
             <div style="margin-top: 20px;">
                 <button type="submit" class="btn btn-success">Create Feed</button>
-                <a href="/admin/feeds" class="btn btn-secondary">Cancel</a>
+                <a href="/feeds" class="btn btn-secondary">Cancel</a>
             </div>
         </form>
     </div>
@@ -418,7 +418,7 @@ adminRoutes.get('/feeds/:id/edit', async (c) => {
             ${getNavigation()}
         </div>
         <p>The requested RSS feed was not found.</p>
-        <a href="/admin/feeds" class="btn">Back to Feeds</a>
+        <a href="/feeds" class="btn">Back to Feeds</a>
     </div>
 </body>
 </html>`, 404);
@@ -438,7 +438,7 @@ adminRoutes.get('/feeds/:id/edit', async (c) => {
             ${getNavigation()}
         </div>
         
-        <form method="POST" action="/admin/feeds/${feed.id}/edit">
+        <form method="POST" action="/feeds/${feed.id}/edit">
             <div class="form-group">
                 <label class="form-label">Feed URL *</label>
                 <input type="url" name="feed_url" class="form-control" required value="${feed.feed_url}">
@@ -503,8 +503,8 @@ adminRoutes.get('/feeds/:id/edit', async (c) => {
             
             <div style="margin-top: 20px;">
                 <button type="submit" class="btn btn-success">Update Feed</button>
-                <a href="/admin/feeds" class="btn btn-secondary">Cancel</a>
-                <button type="button" onclick="if(confirm('Are you sure you want to delete this feed? This action cannot be undone.')) { window.location.href='/admin/feeds/${feed.id}/delete'; }" class="btn" style="background: #dc3545; margin-left: 10px;">Delete Feed</button>
+                <a href="/feeds" class="btn btn-secondary">Cancel</a>
+                <button type="button" onclick="if(confirm('Are you sure you want to delete this feed? This action cannot be undone.')) { window.location.href='/feeds/${feed.id}/delete'; }" class="btn" style="background: #dc3545; margin-left: 10px;">Delete Feed</button>
             </div>
         </form>
     </div>
@@ -542,7 +542,7 @@ adminRoutes.post('/feeds/:id/edit', async (c) => {
     
     await db.updateFeed(feedId, updateData);
     
-    return c.redirect('/admin/feeds');
+    return c.redirect('/feeds');
   } catch (error) {
     console.error('Failed to update feed:', error);
     
@@ -564,8 +564,8 @@ adminRoutes.post('/feeds/:id/edit', async (c) => {
         <div style="padding: 15px; margin: 20px 0; border-radius: 4px; background: #f8d7da; color: #721c24;">
             <strong>Error:</strong> ${errorMessage}
         </div>
-        <a href="/admin/feeds/${c.req.param('id')}/edit" class="btn">Back to Edit</a>
-        <a href="/admin/feeds" class="btn btn-secondary">Back to Feeds</a>
+        <a href="/feeds/${c.req.param('id')}/edit" class="btn">Back to Edit</a>
+        <a href="/feeds" class="btn btn-secondary">Back to Feeds</a>
     </div>
 </body>
 </html>`, 400);
@@ -580,7 +580,7 @@ adminRoutes.get('/feeds/:id/delete', async (c) => {
     
     await db.deleteFeed(feedId);
     
-    return c.redirect('/admin/feeds');
+    return c.redirect('/feeds');
   } catch (error) {
     console.error('Failed to delete feed:', error);
     return c.html(`<!DOCTYPE html>
@@ -595,7 +595,7 @@ adminRoutes.get('/feeds/:id/delete', async (c) => {
         <div style="padding: 15px; margin: 20px 0; border-radius: 4px; background: #f8d7da; color: #721c24;">
             <strong>Error:</strong> Failed to delete feed: ${error.message}
         </div>
-        <a href="/admin/feeds" class="btn">Back to Feeds</a>
+        <a href="/feeds" class="btn">Back to Feeds</a>
     </div>
 </body>
 </html>`, 500);
@@ -620,7 +620,7 @@ adminRoutes.get('/agents', async (c) => {
         <div class="header">
             <h1>Translation Agents</h1>
             ${getNavigation()}
-            <a href="/admin/agents/add" class="btn btn-success">Add New Agent</a>
+            <a href="/agents/add" class="btn btn-success">Add New Agent</a>
         </div>
         
         ${agents.results?.length > 0 ? `
@@ -644,7 +644,7 @@ adminRoutes.get('/agents', async (c) => {
                     `).join('')}
                 </tbody>
             </table>
-        ` : '<p>No translation agents found. <a href="/admin/agents/add">Add your first agent</a></p>'}
+        ` : '<p>No translation agents found. <a href="/agents/add">Add your first agent</a></p>'}
     </div>
 </body>
 </html>`;
@@ -683,7 +683,7 @@ adminRoutes.get('/agents/add', async (c) => {
             ${getNavigation()}
         </div>
         
-        <form method="POST" action="/admin/agents/add">
+        <form method="POST" action="/agents/add">
             <div class="form-group">
                 <label class="form-label">Agent Type</label>
                 <select name="type" class="form-control" onchange="showConfig(this.value)" required>
@@ -726,7 +726,7 @@ adminRoutes.get('/agents/add', async (c) => {
             
             <div style="margin-top: 20px;">
                 <button type="submit" class="btn btn-success">Create Agent</button>
-                <a href="/admin/agents" class="btn btn-secondary">Cancel</a>
+                <a href="/agents" class="btn btn-secondary">Cancel</a>
             </div>
         </form>
     </div>
@@ -773,7 +773,7 @@ adminRoutes.post('/agents/add', async (c) => {
     
     await db.createAgent(agentData);
     
-    return c.redirect('/admin/agents');
+    return c.redirect('/agents');
   } catch (error) {
     console.error('Failed to create agent:', error);
     return c.html(`<h1>Error</h1><p>Failed to create agent: ${error.message}</p>`, 500);

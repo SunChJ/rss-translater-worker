@@ -11,11 +11,10 @@ const app = new Hono();
 
 // Auto-initialization middleware
 app.use('*', async (c, next) => {
-  // Only initialize for routes that need database access
-  const needsDB = c.req.path.startsWith('/admin') || 
-                  c.req.path.startsWith('/feeds');
+  // Only initialize for routes that need database access (all routes except health and cron)
+  const skipDB = c.req.path === '/health' || c.req.path === '/cron';
   
-  if (needsDB && c.env.DB) {
+  if (!skipDB && c.env.DB) {
     try {
       const db = new Database(c.env.DB);
       const wasInitialized = await db.ensureInitialized();
@@ -43,16 +42,11 @@ app.use('*', cors({
 app.use('*', logger());
 app.use('/api/*', prettyJSON());
 
-// Routes
+// Mount admin routes directly to root
+app.route('/', adminRoutes);
 app.route('/feeds', feedRoutes);
-app.route('/admin', adminRoutes);
 // API routes disabled - use Web interface instead
 // app.route('/api', apiRoutes);
-
-// Root route - redirect to admin interface
-app.get('/', (c) => {
-  return c.redirect('/admin');
-});
 
 // Health check
 app.get('/health', (c) => {
