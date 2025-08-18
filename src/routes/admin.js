@@ -940,6 +940,7 @@ adminRoutes.get('/agents', async (c) => {
                         <th>Type</th>
                         <th>Status</th>
                         <th>AI Capable</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -949,12 +950,58 @@ adminRoutes.get('/agents', async (c) => {
                             <td>${agent.type.toUpperCase()}</td>
                             <td>${agent.valid ? '✓ Valid' : '✗ Invalid'}</td>
                             <td>${agent.is_ai ? '🤖 Yes' : '🔤 No'}</td>
+                            <td class="actions">
+                                <a href="/agents" class="btn btn-sm">Manage</a>
+                                <button onclick="testAgent(${agent.id})" class="btn btn-sm btn-success" id="test-btn-${agent.id}">Test</button>
+                            </td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         ` : '<p>No translation agents found. <a href="/agents/add">Add your first agent</a></p>'}
     </div>
+    
+    <script>
+        function testAgent(agentId) {
+            const button = document.getElementById(\`test-btn-\${agentId}\`);
+            const row = button.closest('tr');
+            
+            // Update button state
+            button.innerHTML = '🔄 Testing...';
+            button.classList.add('updating');
+            row.classList.add('updating');
+            
+            // Send test request
+            fetch(\`/api/agents/\${agentId}/test\`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    button.innerHTML = '✅ Success';
+                    alert('Translation test successful!\\n\\nTest Text: "Hello world"\\nTranslated: ' + data.translated_text);
+                    
+                    setTimeout(() => {
+                        button.innerHTML = 'Test';
+                        button.classList.remove('updating');
+                        row.classList.remove('updating');
+                    }, 3000);
+                } else {
+                    throw new Error(data.error || 'Translation test failed');
+                }
+            })
+            .catch(error => {
+                button.innerHTML = '❌ Failed';
+                button.classList.remove('updating');
+                row.classList.remove('updating');
+                alert('Translation test failed: ' + error.message);
+                setTimeout(() => {
+                    button.innerHTML = 'Test';
+                }, 3000);
+            });
+        }
+    </script>
 </body>
 </html>`;
 
@@ -1335,15 +1382,18 @@ adminRoutes.get('/entries', async (c) => {
     `;
     let params = [];
     
-    if (feedId) {
+    if (feedId && feedId !== 'empty') {
       query += ' WHERE e.feed_id = ?';
       params.push(parseInt(feedId));
+    } else if (feedId === 'empty') {
+      query += ' WHERE e.feed_id IS NULL';
     }
     
     query += ' ORDER BY e.published DESC, e.created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
     
-    const entries = await db.db.prepare(query).bind(...params).all();
+    const entriesResult = await db.db.prepare(query).bind(...params).all();
+    const entries = entriesResult.results || [];
     
     // Get feeds for filter dropdown
     const feeds = await db.getFeeds(100, 0);
@@ -1439,7 +1489,8 @@ adminRoutes.get('/entries', async (c) => {
                 <div style="flex: 1;">
                     <label style="display: block; margin-bottom: 5px;">Filter by Feed:</label>
                     <select name="feed_id" class="form-control">
-                        <option value="">All Feeds</option>
+                        <option value="">All Entries</option>
+                        <option value="empty" ${feedId === 'empty' ? 'selected' : ''}>Entries without Feed (feed_id is NULL)</option>
                         ${feeds.results?.map(feed => `
                             <option value="${feed.id}" ${feedId == feed.id ? 'selected' : ''}>
                                 ${feed.name || 'Unnamed'} (${feed.target_language})
@@ -1464,10 +1515,14 @@ adminRoutes.get('/entries', async (c) => {
                         ${entry.translated_title ? `<div class="translated-title">${entry.translated_title}</div>` : ''}
                         <div class="entry-meta">
                             <strong>Feed:</strong> 
-                            <a href="/feeds/${entry.feed_slug || entry.feed_id}/edit">${entry.feed_name || 'Unknown Feed'}</a>
+                            ${entry.feed_id ? 
+                                `<a href="/feeds/${entry.feed_slug || entry.feed_id}/edit">${entry.feed_name || 'Unknown Feed'}</a>` :
+                                '<span style="color: #999;">No Feed (feed_id is NULL)</span>'
+                            }
                             | <strong>Language:</strong> ${entry.target_language || 'Unknown'}
                             | <strong>Published:</strong> ${entry.published ? new Date(entry.published).toLocaleString() : 'Unknown'}
                             ${entry.author ? `| <strong>Author:</strong> ${entry.author}` : ''}
+                            ${entry.feed_id ? '' : ' | <strong>Feed ID:</strong> NULL'}
                         </div>
                     </div>
                 </div>

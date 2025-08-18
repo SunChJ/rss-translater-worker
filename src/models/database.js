@@ -272,7 +272,8 @@ export class Database {
     query += ' ORDER BY l.created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
     
-    return await this.db.prepare(query).bind(...params).all();
+    const result = await this.db.prepare(query).bind(...params).all();
+    return result.results || [];
   }
 
   async getLogStats() {
@@ -286,8 +287,9 @@ export class Database {
     `).all();
     
     const stats = { total: 0, info: 0, warn: 0, error: 0, debug: 0 };
+    const rows = result.results || [];
     
-    result.forEach(row => {
+    rows.forEach(row => {
       stats[row.level] = row.count;
       stats.total += row.count;
     });

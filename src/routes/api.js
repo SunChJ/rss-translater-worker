@@ -335,13 +335,18 @@ apiRoutes.post('/agents', async (c) => {
 apiRoutes.post('/agents/:id/test', async (c) => {
   try {
     const { id } = c.req.param();
-    const { text = 'Hello, world!', target_language = 'Chinese Simplified' } = await c.req.json();
+    const body = await c.req.json().catch(() => ({})); // Handle empty body
+    const { text = 'Hello, world!', target_language = 'Chinese Simplified' } = body;
     
     const db = new Database(c.env.DB);
     const agentData = await db.getAgentById(parseInt(id));
     
     if (!agentData) {
-      return c.json({ error: 'Agent not found' }, 404);
+      return c.json({ success: false, error: 'Agent not found' }, 404);
+    }
+    
+    if (!agentData.valid) {
+      return c.json({ success: false, error: 'Agent is not valid. Please check configuration.' }, 400);
     }
     
     const agentManager = new AgentManager(c.env, db);
@@ -352,14 +357,36 @@ apiRoutes.post('/agents/:id/test', async (c) => {
     
     const result = await agent.translate(text, target_language);
     
+    // Log successful test
+    await db.addLog('info', 'translation', `Agent test completed successfully: ${agentData.name}`, {
+      test_text: text,
+      translated_text: result,
+      target_language
+    }, null, parseInt(id));
+    
     return c.json({
-      test_result: result,
+      success: true,
+      translated_text: result,
       agent_name: agentData.name,
-      agent_type: agentData.type
+      agent_type: agentData.type,
+      test_text: text,
+      target_language
     });
   } catch (error) {
     console.error('Agent test failed:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    
+    // Try to log the error if database is available
+    try {
+      const db = new Database(c.env.DB);
+      await db.addLog('error', 'translation', `Agent test failed for agent ID ${id}: ${error.message}`, {
+        error: error.message,
+        stack: error.stack
+      }, null, parseInt(id));
+    } catch (logError) {
+      console.error('Failed to log test error:', logError);
+    }
+    
+    return c.json({ success: false, error: error.message || 'Translation test failed' }, 500);
   }
 });
 

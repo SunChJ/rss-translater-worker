@@ -45,8 +45,8 @@ app.use('/api/*', prettyJSON());
 // Mount admin routes directly to root
 app.route('/', adminRoutes);
 app.route('/feeds', feedRoutes);
-// API routes disabled - use Web interface instead
-// app.route('/api', apiRoutes);
+// API routes enabled for agent testing
+app.route('/api', apiRoutes);
 
 // Health check
 app.get('/health', (c) => {
