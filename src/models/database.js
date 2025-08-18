@@ -221,9 +221,20 @@ export class Database {
   }
 
   generateSlug(feedUrl, targetLanguage, secretKey = 'default-secret') {
-    // Simple slug generation - in production, use crypto.subtle for UUID5
-    const text = `${feedUrl}:${targetLanguage}:${secretKey}`;
-    return text.replace(/[^a-zA-Z0-9]/g, '').substring(0, 32).toLowerCase();
+    // Create a more readable slug by using domain + path + language
+    try {
+      const url = new URL(feedUrl);
+      const domain = url.hostname.replace(/^www\./, '').replace(/\./g, '-');
+      const path = url.pathname.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      const langCode = targetLanguage.toLowerCase().replace(/[^a-z]/g, '').substring(0, 2);
+      
+      const slug = `${domain}-${path}-${langCode}`.replace(/-+/g, '-').replace(/^-|-$/g, '');
+      return slug.substring(0, 64).toLowerCase();
+    } catch (error) {
+      // Fallback for invalid URLs
+      const text = `${feedUrl}:${targetLanguage}:${secretKey}`;
+      return text.replace(/[^a-zA-Z0-9]/g, '').substring(0, 32).toLowerCase();
+    }
   }
 
   // Agent methods
