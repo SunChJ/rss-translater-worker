@@ -4,20 +4,28 @@ import { FeedGenerator } from '../services/feedGenerator.js';
 
 export const feedRoutes = new Hono();
 
-// Get translated feed by slug (RSS format)
-feedRoutes.get(/.*\.rss$/, async (c) => {
+// Get translated feed by slug (all formats)
+feedRoutes.get('/:filename', async (c) => {
   try {
-    const path = c.req.path;
-    console.log('RSS request path:', path);
+    const filename = c.req.param('filename');
+    console.log('Feed request filename:', filename);
     
-    // Extract slug from path: /feeds/slug-name.rss -> slug-name
-    const pathMatch = path.match(/\/feeds\/(.+)\.rss$/);
-    if (!pathMatch) {
-      return c.text('Invalid RSS path format', 400);
+    // Determine format and extract slug
+    let slug, format;
+    if (filename.endsWith('.rss')) {
+      slug = filename.replace('.rss', '');
+      format = 'rss';
+    } else if (filename.endsWith('.atom')) {
+      slug = filename.replace('.atom', '');
+      format = 'atom';
+    } else if (filename.endsWith('.json')) {
+      slug = filename.replace('.json', '');
+      format = 'json';
+    } else {
+      return c.text('Unsupported feed format', 404);
     }
     
-    const slug = pathMatch[1];
-    console.log('Extracted slug:', slug);
+    console.log('Extracted slug:', slug, 'format:', format);
     
     if (!slug) {
       return c.text('Invalid slug parameter', 400);
@@ -50,79 +58,39 @@ feedRoutes.get(/.*\.rss$/, async (c) => {
     } : 'none');
     
     const generator = new FeedGenerator();
-    console.log('Generating RSS for feed:', feed.name, 'with', entries.length, 'entries');
-    const rssXml = generator.generateRSS(feed, entries);
-    console.log('RSS XML generated, length:', rssXml.length);
     
-    return c.text(rssXml, 200, {
-      'Content-Type': 'application/rss+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=1800' // 30 minutes
-    });
+    // Generate appropriate format
+    if (format === 'rss') {
+      console.log('Generating RSS for feed:', feed.name, 'with', entries.length, 'entries');
+      const rssXml = generator.generateRSS(feed, entries);
+      console.log('RSS XML generated, length:', rssXml.length);
+      
+      return c.text(rssXml, 200, {
+        'Content-Type': 'application/rss+xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=1800' // 30 minutes
+      });
+    } else if (format === 'atom') {
+      console.log('Generating Atom for feed:', feed.name, 'with', entries.length, 'entries');
+      const atomXml = generator.generateAtom(feed, entries);
+      
+      return c.text(atomXml, 200, {
+        'Content-Type': 'application/atom+xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=1800' // 30 minutes
+      });
+    } else if (format === 'json') {
+      console.log('Generating JSON for feed:', feed.name, 'with', entries.length, 'entries');
+      const jsonFeed = generator.generateJSON(feed, entries);
+      
+      return c.json(jsonFeed, 200, {
+        'Cache-Control': 'public, max-age=1800' // 30 minutes
+      });
+    } else {
+      return c.text('Unsupported format', 400);
+    }
   } catch (error) {
     console.error('RSS generation failed:', error);
     console.error('Error stack:', error.stack);
     return c.text(`Internal server error: ${error.message}`, 500);
-  }
-});
-
-// Get translated feed by slug (Atom format)
-feedRoutes.get(/.*\.atom$/, async (c) => {
-  try {
-    const path = c.req.path;
-    const pathMatch = path.match(/\/feeds\/(.+)\.atom$/);
-    if (!pathMatch) {
-      return c.text('Invalid Atom path format', 400);
-    }
-    const slug = pathMatch[1];
-    const db = new Database(c.env.DB);
-    
-    const feed = await db.getFeedBySlug(slug);
-    if (!feed) {
-      return c.text('Feed not found', 404);
-    }
-
-    const entries = await db.getEntriesByFeedId(feed.id, feed.max_posts || 20);
-    
-    const generator = new FeedGenerator();
-    const atomXml = generator.generateAtom(feed, entries);
-    
-    return c.text(atomXml, 200, {
-      'Content-Type': 'application/atom+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=1800' // 30 minutes
-    });
-  } catch (error) {
-    console.error('Atom generation failed:', error);
-    return c.text('Internal server error', 500);
-  }
-});
-
-// Get translated feed by slug (JSON format)
-feedRoutes.get(/.*\.json$/, async (c) => {
-  try {
-    const path = c.req.path;
-    const pathMatch = path.match(/\/feeds\/(.+)\.json$/);
-    if (!pathMatch) {
-      return c.json({ error: 'Invalid JSON path format' }, 400);
-    }
-    const slug = pathMatch[1];
-    const db = new Database(c.env.DB);
-    
-    const feed = await db.getFeedBySlug(slug);
-    if (!feed) {
-      return c.json({ error: 'Feed not found' }, 404);
-    }
-
-    const entries = await db.getEntriesByFeedId(feed.id, feed.max_posts || 20);
-    
-    const generator = new FeedGenerator();
-    const jsonFeed = generator.generateJSON(feed, entries);
-    
-    return c.json(jsonFeed, 200, {
-      'Cache-Control': 'public, max-age=1800' // 30 minutes
-    });
-  } catch (error) {
-    console.error('JSON feed generation failed:', error);
-    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
