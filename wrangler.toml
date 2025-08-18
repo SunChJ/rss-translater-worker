@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 # Custom domain routes
 [[routes]]
-pattern = "s.samsoncj.xyz/*"
+pattern = "r.samsoncj.xyz/*"
 zone_name = "samsoncj.xyz"
 
 # Cron triggers for feed updates
