@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { Database } from '../models/database.js';
+import { TranslationQueue } from '../services/translationQueue.js';
 
 export const adminRoutes = new Hono();
 
@@ -53,6 +54,7 @@ function getNavigation() {
             <a href="/agents">Translation Agents</a>
             <a href="/entries">Entries</a>
             <a href="/logs">System Logs</a>
+            <a href="/translation-monitor" style="background: #2196f3;">🚀 翻译监控</a>
         </div>
     `;
 }
@@ -116,6 +118,33 @@ adminRoutes.get('/', async (c) => {
                 <div class="stat-number">${entryCount.count}</div>
                 <div class="stat-label">Translated Entries</div>
             </a>
+        </div>
+        
+        <!-- 翻译进度监控区域 -->
+        <div style="background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2196f3;">
+            <h3 style="margin: 0 0 15px 0; color: #1976d2;">🚀 翻译进度监控</h3>
+            <div id="translation-progress" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #1976d2;" id="queue-running">-</div>
+                    <div style="font-size: 0.9em; color: #666;">正在翻译</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #28a745;" id="queue-completed">-</div>
+                    <div style="font-size: 0.9em; color: #666;">已完成</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #ff9800;" id="queue-pending">-</div>
+                    <div style="font-size: 0.9em; color: #666;">等待中</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #f44336;" id="queue-failed">-</div>
+                    <div style="font-size: 0.9em; color: #666;">失败</div>
+                </div>
+            </div>
+            <div style="margin-top: 15px; text-align: center;">
+                <a href="/translation-monitor" class="btn" style="background: #2196f3;">📊 查看详细进度</a>
+                <button onclick="refreshProgress()" class="btn" style="background: #4caf50; margin-left: 10px;">🔄 刷新状态</button>
+            </div>
         </div>
         
         <h3>Recent RSS Feeds</h3>
@@ -184,6 +213,31 @@ adminRoutes.get('/', async (c) => {
             </table>
         ` : '<p>No translation agents found. <a href="/admin/agents">Add your first agent</a></p>'}
     </div>
+    
+    <script>
+        async function refreshProgress() {
+            try {
+                const response = await fetch('/api/translation/queue/status');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const status = data.status;
+                    document.getElementById('queue-running').textContent = status.running;
+                    document.getElementById('queue-completed').textContent = status.progress.completed;
+                    document.getElementById('queue-pending').textContent = status.progress.pending;
+                    document.getElementById('queue-failed').textContent = status.progress.failed;
+                }
+            } catch (error) {
+                console.error('Failed to fetch progress:', error);
+            }
+        }
+        
+        // 页面加载时获取进度
+        document.addEventListener('DOMContentLoaded', refreshProgress);
+        
+        // 每30秒自动刷新进度
+        setInterval(refreshProgress, 30000);
+    </script>
 </body>
 </html>`;
 
@@ -1671,5 +1725,328 @@ adminRoutes.post('/agents/:id/delete', async (c) => {
       success: false, 
       error: error.message 
     }, 500);
+  }
+});
+
+// 翻译进度监控页面
+adminRoutes.get('/translation-monitor', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    const translationQueue = new TranslationQueue(3);
+    
+    // 获取队列状态
+    const queueStatus = translationQueue.getStatus();
+    
+    // 获取所有Feed的翻译统计
+    const feedStats = await db.db.prepare(`
+      SELECT 
+        f.id,
+        f.name,
+        f.feed_url,
+        f.last_fetch,
+        f.fetch_status,
+        f.translator_id,
+        f.target_language,
+        COUNT(e.id) as total_entries,
+        COUNT(CASE WHEN e.translated_title != '' OR e.translated_content != '' THEN 1 END) as translated_entries,
+        SUM(e.tokens_used) as total_tokens,
+        SUM(e.characters_used) as total_characters
+      FROM feeds f
+      LEFT JOIN entries e ON f.id = e.feed_id
+      GROUP BY f.id
+      ORDER BY f.last_fetch DESC
+    `).all();
+    
+    const html = `
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSS翻译进度监控</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2em;
+        }
+        .content {
+            padding: 20px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .stat-card h3 {
+            margin: 0 0 10px 0;
+            color: #495057;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #212529;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            transition: width 0.3s ease;
+        }
+        .feeds-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .feeds-table th,
+        .feeds-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .feeds-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+        .feeds-table tr:hover {
+            background: #f8f9fa;
+        }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-bottom: 20px;
+        }
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+        .queue-status {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+        .queue-status h3 {
+            margin: 0 0 10px 0;
+            color: #1976d2;
+        }
+        .queue-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .queue-item {
+            text-align: center;
+        }
+        .queue-item .label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .queue-item .value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 RSS翻译进度监控</h1>
+            <p>实时监控翻译队列状态和Feed处理进度</p>
+        </div>
+        
+        <div class="content">
+            <button class="refresh-btn" onclick="location.reload()">🔄 刷新数据</button>
+            
+            <div class="queue-status">
+                <h3>📊 翻译队列状态</h3>
+                <div class="queue-info">
+                    <div class="queue-item">
+                        <div class="label">最大并发数</div>
+                        <div class="value">${queueStatus.maxConcurrent}</div>
+                    </div>
+                    <div class="queue-item">
+                        <div class="label">正在运行</div>
+                        <div class="value">${queueStatus.running}</div>
+                    </div>
+                    <div class="queue-item">
+                        <div class="label">队列中</div>
+                        <div class="value">${queueStatus.queued}</div>
+                    </div>
+                    <div class="queue-item">
+                        <div class="label">总任务数</div>
+                        <div class="value">${queueStatus.progress.total}</div>
+                    </div>
+                    <div class="queue-item">
+                        <div class="label">已完成</div>
+                        <div class="value">${queueStatus.progress.completed}</div>
+                    </div>
+                    <div class="queue-item">
+                        <div class="label">失败</div>
+                        <div class="value">${queueStatus.progress.failed}</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>总Feed数</h3>
+                    <div class="value">${feedStats.results?.length || 0}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>活跃Feed</h3>
+                    <div class="value">${feedStats.results?.filter(f => f.fetch_status).length || 0}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>总条目数</h3>
+                    <div class="value">${feedStats.results?.reduce((sum, f) => sum + (f.total_entries || 0), 0) || 0}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>已翻译条目</h3>
+                    <div class="value">${feedStats.results?.reduce((sum, f) => sum + (f.translated_entries || 0), 0) || 0}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>总Token使用量</h3>
+                    <div class="value">${feedStats.results?.reduce((sum, f) => sum + (f.total_tokens || 0), 0).toLocaleString() || 0}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>总字符使用量</h3>
+                    <div class="value">${feedStats.results?.reduce((sum, f) => sum + (f.total_characters || 0), 0).toLocaleString() || 0}</div>
+                </div>
+            </div>
+            
+            <h2>📋 Feed详细状态</h2>
+            <table class="feeds-table">
+                <thead>
+                    <tr>
+                        <th>Feed名称</th>
+                        <th>URL</th>
+                        <th>状态</th>
+                        <th>最后更新</th>
+                        <th>总条目</th>
+                        <th>已翻译</th>
+                        <th>翻译进度</th>
+                        <th>Token使用</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${(feedStats.results || []).map(feed => {
+                        const progress = feed.total_entries > 0 ? 
+                            Math.round((feed.translated_entries / feed.total_entries) * 100) : 0;
+                        const statusClass = feed.fetch_status ? 'status-active' : 'status-inactive';
+                        const statusText = feed.fetch_status ? '活跃' : '非活跃';
+                        
+                        return `
+                            <tr>
+                                <td><strong>${feed.name || '未命名'}</strong></td>
+                                <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">
+                                    ${feed.feed_url}
+                                </td>
+                                <td>
+                                    <span class="status-badge ${statusClass}">${statusText}</span>
+                                </td>
+                                <td>${feed.last_fetch ? new Date(feed.last_fetch).toLocaleString('zh-CN') : '从未更新'}</td>
+                                <td>${feed.total_entries || 0}</td>
+                                <td>${feed.translated_entries || 0}</td>
+                                <td>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: ${progress}%"></div>
+                                    </div>
+                                    <small>${progress}%</small>
+                                </td>
+                                <td>${(feed.total_tokens || 0).toLocaleString()}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        // 自动刷新页面（每30秒）
+        setTimeout(() => {
+            location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>`;
+    
+    return c.html(html);
+    
+  } catch (error) {
+    console.error('Failed to render translation monitor:', error);
+    return c.html(`
+      <!DOCTYPE html>
+      <html>
+        <head><title>错误</title></head>
+        <body>
+          <h1>加载失败</h1>
+          <p>错误: ${error.message}</p>
+        </body>
+      </html>
+    `);
   }
 });

@@ -1,11 +1,13 @@
 import { Database } from '../models/database.js';
 import { AgentManager } from './agents.js';
 import { FeedProcessor } from './feedProcessor.js';
+import { TranslationQueue } from './translationQueue.js';
 
 export async function updateAllFeeds(env) {
   const db = new Database(env.DB);
   const agentManager = new AgentManager(env);
   const processor = new FeedProcessor(env);
+  const translationQueue = new TranslationQueue(3); // 最多3个并发翻译
   
   console.log('Starting scheduled feed updates...');
   
@@ -49,95 +51,86 @@ export async function updateAllFeeds(env) {
     // Add agent retrieval method to processor
     processor.getAgentById = (id) => agentCache.get(id);
     
-    // Process feeds in batches to avoid overwhelming the system
-    const batchSize = 5;
-    for (let i = 0; i < feedsToUpdate.length; i += batchSize) {
-      const batch = feedsToUpdate.slice(i, i + batchSize);
-      
-      const batchPromises = batch.map(async (feed) => {
-        try {
-          console.log(`Processing feed: ${feed.name || feed.feed_url}`);
+    // Process feeds sequentially but with concurrent translation
+    for (const feed of feedsToUpdate) {
+      try {
+        console.log(`Processing feed: ${feed.name || feed.feed_url}`);
+        
+        const result = await processor.processFeedWithConcurrentTranslation(
+          feed, 
+          processor, 
+          translationQueue
+        );
+        
+        if (result.success && !result.notModified) {
+          // Update feed metadata
+          await db.updateFeed(feed.id, result.feedUpdates);
           
-          const result = await processor.processFeed(feed, processor);
-          
-          if (result.success && !result.notModified) {
-            // Update feed metadata
-            await db.updateFeed(feed.id, result.feedUpdates);
-            
-            // Save new entries
-            for (const entry of result.entries || []) {
-              try {
-                // Check if entry already exists
-                const existingEntry = await db.db.prepare(
-                  'SELECT id FROM entries WHERE feed_id = ? AND guid = ?'
-                ).bind(feed.id, entry.guid).first();
-                
-                if (!existingEntry) {
-                  await db.createEntry({
-                    ...entry,
-                    feed_id: feed.id
-                  });
-                }
-              } catch (entryError) {
-                console.error(`Failed to save entry for feed ${feed.id}:`, entryError);
-              }
-            }
-            
-            // Update feed usage statistics
-            if (result.entries?.length > 0) {
-              const totalTokens = result.entries.reduce((sum, e) => sum + (e.tokens_used || 0), 0);
-              const totalChars = result.entries.reduce((sum, e) => sum + (e.characters_used || 0), 0);
+          // Save new entries
+          for (const entry of result.entries || []) {
+            try {
+              // Check if entry already exists
+              const existingEntry = await db.db.prepare(
+                'SELECT id FROM entries WHERE feed_id = ? AND guid = ?'
+              ).bind(feed.id, entry.guid).first();
               
-              await db.db.prepare(`
-                UPDATE feeds 
-                SET total_tokens = total_tokens + ?, 
-                    total_characters = total_characters + ?,
-                    last_translate = ?
-                WHERE id = ?
-              `).bind(totalTokens, totalChars, new Date().toISOString(), feed.id).run();
+              if (!existingEntry) {
+                await db.createEntry({
+                  ...entry,
+                  feed_id: feed.id
+                });
+              }
+            } catch (entryError) {
+              console.error(`Failed to save entry for feed ${feed.id}:`, entryError);
             }
-            
-            updated++;
-            return { success: true, feed: feed.name || feed.feed_url, entries: result.entries?.length || 0 };
-          } else if (result.notModified) {
-            // Update last_fetch even if not modified
-            await db.updateFeed(feed.id, { 
-              last_fetch: new Date().toISOString(),
-              fetch_status: true 
-            });
-            return { success: true, feed: feed.name || feed.feed_url, notModified: true };
-          } else {
-            // Update error status
-            await db.updateFeed(feed.id, result.feedUpdates || {
-              fetch_status: false,
-              log: result.error || 'Unknown error',
-              last_fetch: new Date().toISOString()
-            });
-            
-            errors++;
-            return { success: false, feed: feed.name || feed.feed_url, error: result.error };
           }
-        } catch (error) {
-          console.error(`Failed to process feed ${feed.id}:`, error);
           
+          // Update feed usage statistics
+          if (result.entries?.length > 0) {
+            const totalTokens = result.entries.reduce((sum, e) => sum + (e.tokens_used || 0), 0);
+            const totalChars = result.entries.reduce((sum, e) => sum + (e.characters_used || 0), 0);
+            
+            await db.db.prepare(`
+              UPDATE feeds 
+              SET total_tokens = total_tokens + ?, 
+                  total_characters = total_characters + ?,
+                  last_translate = ?
+              WHERE id = ?
+            `).bind(totalTokens, totalChars, new Date().toISOString(), feed.id).run();
+          }
+          
+          updated++;
+          results.push({ success: true, feed: feed.name || feed.feed_url, entries: result.entries?.length || 0 });
+        } else if (result.notModified) {
+          // Update last_fetch even if not modified
+          await db.updateFeed(feed.id, { 
+            last_fetch: new Date().toISOString(),
+            fetch_status: true 
+          });
+          results.push({ success: true, feed: feed.name || feed.feed_url, notModified: true });
+        } else {
           // Update error status
-          await db.updateFeed(feed.id, {
+          await db.updateFeed(feed.id, result.feedUpdates || {
             fetch_status: false,
-            log: `${new Date().toISOString()}: ${error.message}`,
+            log: result.error || 'Unknown error',
             last_fetch: new Date().toISOString()
           });
           
           errors++;
-          return { success: false, feed: feed.name || feed.feed_url, error: error.message };
+          results.push({ success: false, feed: feed.name || feed.feed_url, error: result.error });
         }
-      });
-      
-      const batchResults = await Promise.allSettled(batchPromises);
-      results.push(...batchResults.map(r => r.value || { success: false, error: 'Promise rejected' }));
-      
-      // Small delay between batches to be nice to external services
-      if (i + batchSize < feedsToUpdate.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error(`Failed to process feed ${feed.id}:`, error);
+        
+        // Update error status
+        await db.updateFeed(feed.id, {
+          fetch_status: false,
+          log: `${new Date().toISOString()}: ${error.message}`,
+          last_fetch: new Date().toISOString()
+        });
+        
+        errors++;
+        results.push({ success: false, feed: feed.name || feed.feed_url, error: error.message });
       }
     }
     
@@ -169,6 +162,7 @@ export async function updateSingleFeed(feedId, env) {
   const db = new Database(env.DB);
   const agentManager = new AgentManager(env);
   const processor = new FeedProcessor(env);
+  const translationQueue = new TranslationQueue(3);
   
   try {
     const feed = await db.getFeedById(feedId);
@@ -195,7 +189,11 @@ export async function updateSingleFeed(feedId, env) {
     
     processor.getAgentById = (id) => agentCache.get(id);
     
-    const result = await processor.processFeed(feed, processor);
+    const result = await processor.processFeedWithConcurrentTranslation(
+      feed, 
+      processor, 
+      translationQueue
+    );
     
     if (result.success) {
       // Update feed metadata

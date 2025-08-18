@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { TranslationTask } from './translationQueue.js';
 
 export class FeedProcessor {
   constructor(env) {
@@ -359,6 +360,207 @@ export class FeedProcessor {
         }
       };
     }
+  }
+
+  /**
+   * 使用并发翻译处理Feed
+   * @param {Object} feedConfig - Feed配置
+   * @param {Object} agentManager - 代理管理器
+   * @param {Object} translationQueue - 翻译队列
+   * @returns {Promise<Object>} 处理结果
+   */
+  async processFeedWithConcurrentTranslation(feedConfig, agentManager, translationQueue) {
+    try {
+      console.log(`Processing feed with concurrent translation: ${feedConfig.feed_url}`);
+      
+      // 获取Feed内容
+      const fetchResult = await this.fetchFeed(feedConfig.feed_url, feedConfig.etag);
+      
+      if (fetchResult.notModified) {
+        console.log(`Feed not modified: ${feedConfig.feed_url}`);
+        return { success: true, notModified: true };
+      }
+
+      // 解析Feed
+      const parsedFeed = this.parseFeed(fetchResult.content);
+      
+      // 更新Feed元数据
+      const feedUpdates = {
+        name: parsedFeed.title || feedConfig.name,
+        link: parsedFeed.link || feedConfig.link,
+        language: parsedFeed.language || feedConfig.language,
+        etag: fetchResult.etag,
+        last_fetch: new Date().toISOString(),
+        fetch_status: true,
+        log: ''
+      };
+
+      // 处理条目
+      const processedEntries = [];
+      const maxPosts = feedConfig.max_posts || 20;
+      const entriesToProcess = parsedFeed.entries.slice(0, maxPosts);
+
+      if (feedConfig.translator_id && (feedConfig.translate_title || feedConfig.translate_content)) {
+        // 使用并发翻译队列
+        const translationResults = await this.processEntriesWithConcurrentTranslation(
+          entriesToProcess,
+          feedConfig,
+          agentManager,
+          translationQueue
+        );
+        
+        processedEntries.push(...translationResults);
+      } else {
+        // 不需要翻译，直接处理
+        for (const entry of entriesToProcess) {
+          try {
+            const processedEntry = await this.processEntry(entry, feedConfig, agentManager);
+            if (processedEntry) {
+              processedEntries.push(processedEntry);
+            }
+          } catch (error) {
+            console.error(`Failed to process entry ${entry.title}:`, error);
+          }
+        }
+      }
+
+      return {
+        success: true,
+        feedUpdates,
+        entries: processedEntries,
+        etag: fetchResult.etag
+      };
+      
+    } catch (error) {
+      console.error(`Failed to process feed ${feedConfig.feed_url}:`, error);
+      
+      return {
+        success: false,
+        error: error.message,
+        feedUpdates: {
+          fetch_status: false,
+          log: `${new Date().toISOString()}: ${error.message}`,
+          last_fetch: new Date().toISOString()
+        }
+      };
+    }
+  }
+
+  /**
+   * 使用并发翻译处理条目
+   * @param {Array} entries - 条目数组
+   * @param {Object} feedConfig - Feed配置
+   * @param {Object} agentManager - 代理管理器
+   * @param {Object} translationQueue - 翻译队列
+   * @returns {Promise<Array>} 处理后的条目
+   */
+  async processEntriesWithConcurrentTranslation(entries, feedConfig, agentManager, translationQueue) {
+    console.log(`Processing ${entries.length} entries with concurrent translation`);
+    
+    // 重置翻译队列进度
+    translationQueue.resetProgress();
+    
+    // 创建翻译任务
+    const translationTasks = entries.map(entry => {
+      const task = new TranslationTask(entry, feedConfig, agentManager);
+      return {
+        task: () => task.execute(),
+        metadata: {
+          title: entry.title,
+          guid: entry.guid,
+          description: task.getDescription()
+        }
+      };
+    });
+
+    // 批量添加翻译任务到队列
+    const results = await translationQueue.addBatchTasks(translationTasks);
+    
+    // 等待所有任务完成
+    await translationQueue.waitForCompletion();
+    
+    // 获取最终进度
+    const finalProgress = translationQueue.getProgress();
+    console.log(`Translation completed: ${finalProgress.summary}`);
+    
+    // 处理翻译结果
+    const processedEntries = [];
+    
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const result = results[i];
+      
+      try {
+        if (result.status === 'fulfilled' && result.value.success) {
+          // 翻译成功
+          const processedEntry = {
+            title: entry.title || '',
+            link: entry.link || '',
+            author: entry.author || '',
+            content: entry.content || entry.description || '',
+            published: entry.pubDate || new Date().toISOString(),
+            guid: entry.guid || entry.link || '',
+            translated_title: result.value.translatedTitle || '',
+            translated_content: result.value.translatedContent || '',
+            summary: '',
+            tokens_used: result.value.tokensUsed || 0,
+            characters_used: result.value.charactersUsed || 0
+          };
+
+          // 应用摘要（如果配置了）
+          if (feedConfig.summarizer_id && feedConfig.summary) {
+            const summary = await this.summarizeEntry(processedEntry, feedConfig, agentManager);
+            if (summary.success) {
+              processedEntry.summary = summary.text;
+              processedEntry.tokens_used += summary.tokens || 0;
+            }
+          }
+
+          processedEntries.push(processedEntry);
+          
+        } else {
+          // 翻译失败，使用原始内容
+          console.warn(`Translation failed for entry ${entry.title}:`, result.reason || 'Unknown error');
+          
+          const processedEntry = {
+            title: entry.title || '',
+            link: entry.link || '',
+            author: entry.author || '',
+            content: entry.content || entry.description || '',
+            published: entry.pubDate || new Date().toISOString(),
+            guid: entry.guid || entry.link || '',
+            translated_title: '',
+            translated_content: '',
+            summary: '',
+            tokens_used: 0,
+            characters_used: 0
+          };
+
+          processedEntries.push(processedEntry);
+        }
+      } catch (error) {
+        console.error(`Failed to process entry ${entry.title}:`, error);
+        
+        // 添加原始条目作为后备
+        const processedEntry = {
+          title: entry.title || '',
+          link: entry.link || '',
+          author: entry.author || '',
+          content: entry.content || entry.description || '',
+          published: entry.pubDate || new Date().toISOString(),
+          guid: entry.guid || entry.link || '',
+          translated_title: '',
+          translated_content: '',
+          summary: '',
+          tokens_used: 0,
+          characters_used: 0
+        };
+
+        processedEntries.push(processedEntry);
+      }
+    }
+
+    return processedEntries;
   }
 
   async processEntry(entry, feedConfig, agentManager) {

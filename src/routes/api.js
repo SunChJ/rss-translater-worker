@@ -2,8 +2,188 @@ import { Hono } from 'hono';
 import { Database } from '../models/database.js';
 import { AgentManager } from '../services/agents.js';
 import { FeedProcessor } from '../services/feedProcessor.js';
+import { TranslationQueue } from '../services/translationQueue.js';
 
-export const apiRoutes = new Hono();
+const api = new Hono();
+
+// 获取翻译进度
+api.get('/translation/progress', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    const translationQueue = new TranslationQueue(3);
+    
+    // 获取当前翻译状态
+    const status = translationQueue.getStatus();
+    
+    // 获取正在处理的Feed信息
+    const activeFeeds = await db.db.prepare(`
+      SELECT id, name, feed_url, last_fetch, fetch_status 
+      FROM feeds 
+      WHERE fetch_status = true 
+      ORDER BY last_fetch DESC 
+      LIMIT 10
+    `).all();
+    
+    return c.json({
+      success: true,
+      queue: status,
+      activeFeeds: activeFeeds.results || [],
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Failed to get translation progress:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
+  }
+});
+
+// 获取特定Feed的翻译进度
+api.get('/translation/progress/:feedId', async (c) => {
+  try {
+    const feedId = c.req.param('feedId');
+    const db = new Database(c.env.DB);
+    
+    // 获取Feed信息
+    const feed = await db.getFeedById(feedId);
+    if (!feed) {
+      return c.json({ 
+        success: false, 
+        error: 'Feed not found' 
+      }, 404);
+    }
+    
+    // 获取Feed的条目统计
+    const entryStats = await db.db.prepare(`
+      SELECT 
+        COUNT(*) as total_entries,
+        COUNT(CASE WHEN translated_title != '' OR translated_content != '' THEN 1 END) as translated_entries,
+        SUM(tokens_used) as total_tokens,
+        SUM(characters_used) as total_characters
+      FROM entries 
+      WHERE feed_id = ?
+    `).bind(feedId).first();
+    
+    // 获取最近的条目
+    const recentEntries = await db.db.prepare(`
+      SELECT 
+        title, 
+        translated_title, 
+        translated_content,
+        tokens_used,
+        characters_used,
+        created_at
+      FROM entries 
+      WHERE feed_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT 5
+    `).bind(feedId).all();
+    
+    return c.json({
+      success: true,
+      feed: {
+        id: feed.id,
+        name: feed.name,
+        feed_url: feed.feed_url,
+        last_fetch: feed.last_fetch,
+        fetch_status: feed.fetch_status
+      },
+      statistics: entryStats,
+      recentEntries: recentEntries.results || [],
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Failed to get feed translation progress:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
+  }
+});
+
+// 手动触发Feed翻译
+api.post('/translation/translate/:feedId', async (c) => {
+  try {
+    const feedId = c.req.param('feedId');
+    const { updateSingleFeed } = await import('../services/feedUpdater.js');
+    
+    const result = await updateSingleFeed(feedId, c.env);
+    
+    return c.json({
+      success: true,
+      message: 'Translation started successfully',
+      result
+    });
+  } catch (error) {
+    console.error('Failed to start translation:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
+  }
+});
+
+// 获取翻译队列状态
+api.get('/translation/queue/status', async (c) => {
+  try {
+    const translationQueue = new TranslationQueue(3);
+    const status = translationQueue.getStatus();
+    
+    return c.json({
+      success: true,
+      status,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Failed to get queue status:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
+  }
+});
+
+// 测试翻译代理
+api.post('/translation/test-agent', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { agentType, config, testText, targetLanguage } = body;
+    
+    if (!agentType || !config || !testText || !targetLanguage) {
+      return c.json({ 
+        success: false, 
+        error: 'Missing required parameters' 
+      }, 400);
+    }
+    
+    const agentManager = new AgentManager(c.env);
+    const agent = agentManager.createAgent(agentType, config);
+    
+    // 测试翻译
+    const result = await agent.translate(testText, targetLanguage, {
+      textType: 'content'
+    });
+    
+    return c.json({
+      success: true,
+      result,
+      agent: {
+        type: agentType,
+        name: agent.name,
+        valid: agent.valid
+      }
+    });
+  } catch (error) {
+    console.error('Agent test failed:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
+  }
+});
+
+export { api as apiRoutes };
 
 // Feed management endpoints
 apiRoutes.get('/feeds', async (c) => {
