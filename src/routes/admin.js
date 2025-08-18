@@ -12,7 +12,8 @@ const commonStyles = `
     .nav a { margin-right: 20px; padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; }
     .nav a:hover { background: #0056b3; }
     .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }
-    .stat-card { background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; }
+    .stat-card { background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; transition: transform 0.2s, box-shadow 0.2s; }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
     .stat-number { font-size: 2em; font-weight: bold; color: #007bff; }
     .stat-label { color: #666; margin-top: 5px; }
     table { width: 100%; border-collapse: collapse; margin: 20px 0; }
@@ -50,6 +51,7 @@ function getNavigation() {
             <a href="/">Dashboard</a>
             <a href="/feeds">RSS Feeds</a>
             <a href="/agents">Translation Agents</a>
+            <a href="/entries">Entries</a>
             <a href="/logs">System Logs</a>
         </div>
     `;
@@ -102,18 +104,18 @@ adminRoutes.get('/', async (c) => {
         </div>
         
         <div class="stats">
-            <div class="stat-card">
+            <a href="/feeds" class="stat-card" style="text-decoration: none; color: inherit;">
                 <div class="stat-number">${feedCount.count}</div>
                 <div class="stat-label">RSS Feeds</div>
-            </div>
-            <div class="stat-card">
+            </a>
+            <a href="/agents" class="stat-card" style="text-decoration: none; color: inherit;">
                 <div class="stat-number">${agentCount.count}</div>
                 <div class="stat-label">Translation Agents</div>
-            </div>
-            <div class="stat-card">
+            </a>
+            <a href="/entries" class="stat-card" style="text-decoration: none; color: inherit;">
                 <div class="stat-number">${entryCount.count}</div>
                 <div class="stat-label">Translated Entries</div>
-            </div>
+            </a>
         </div>
         
         <h3>Recent RSS Feeds</h3>
@@ -1129,6 +1131,32 @@ adminRoutes.get('/logs', async (c) => {
   try {
     const db = new Database(c.env.DB);
     
+    // Check if logs table exists, create if not
+    try {
+      await db.db.prepare('SELECT 1 FROM logs LIMIT 1').first();
+    } catch (error) {
+      if (error.message.includes('no such table: logs')) {
+        console.log('Creating logs table...');
+        await db.db.prepare(`
+          CREATE TABLE logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            level TEXT NOT NULL,
+            category TEXT NOT NULL,
+            message TEXT NOT NULL,
+            details TEXT,
+            feed_id INTEGER,
+            agent_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (feed_id) REFERENCES feeds (id) ON DELETE SET NULL,
+            FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE SET NULL
+          )
+        `).run();
+        console.log('Logs table created successfully');
+      } else {
+        throw error;
+      }
+    }
+    
     // Get query parameters for filtering
     const level = c.req.query('level') || '';
     const category = c.req.query('category') || '';
@@ -1285,5 +1313,204 @@ adminRoutes.get('/logs', async (c) => {
   } catch (error) {
     console.error('Logs page failed:', error);
     return c.html(`<h1>Error</h1><p>Failed to load logs: ${error.message}</p>`, 500);
+  }
+});
+
+// Entries page
+adminRoutes.get('/entries', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    
+    // Get query parameters for filtering
+    const feedId = c.req.query('feed_id') || '';
+    const page = parseInt(c.req.query('page') || '1');
+    const limit = 20;
+    const offset = (page - 1) * limit;
+    
+    // Get entries with feed information
+    let query = `
+      SELECT e.*, f.name as feed_name, f.slug as feed_slug, f.target_language
+      FROM entries e
+      LEFT JOIN feeds f ON e.feed_id = f.id
+    `;
+    let params = [];
+    
+    if (feedId) {
+      query += ' WHERE e.feed_id = ?';
+      params.push(parseInt(feedId));
+    }
+    
+    query += ' ORDER BY e.published DESC, e.created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+    
+    const entries = await db.db.prepare(query).bind(...params).all();
+    
+    // Get feeds for filter dropdown
+    const feeds = await db.getFeeds(100, 0);
+    
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Translated Entries - RSS Translator Admin</title>
+    <meta charset="UTF-8">
+    <style>
+        ${commonStyles}
+        .entry-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: white;
+        }
+        .entry-header {
+            display: flex;
+            justify-content: between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            gap: 15px;
+        }
+        .entry-title {
+            flex: 1;
+        }
+        .entry-title h3 {
+            margin: 0 0 5px 0;
+            font-size: 18px;
+        }
+        .entry-title h3 a {
+            color: #333;
+            text-decoration: none;
+        }
+        .entry-title h3 a:hover {
+            color: #007bff;
+        }
+        .entry-meta {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .entry-content {
+            margin-top: 15px;
+        }
+        .entry-section {
+            margin-bottom: 15px;
+        }
+        .entry-section h4 {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        .entry-section .content {
+            line-height: 1.6;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .entry-stats {
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        .filter-bar {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .translated-title {
+            color: #007bff;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Translated Entries</h1>
+            ${getNavigation()}
+        </div>
+        
+        <div class="filter-bar">
+            <form method="GET" style="display: flex; gap: 10px; align-items: end;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 5px;">Filter by Feed:</label>
+                    <select name="feed_id" class="form-control">
+                        <option value="">All Feeds</option>
+                        ${feeds.results?.map(feed => `
+                            <option value="${feed.id}" ${feedId == feed.id ? 'selected' : ''}>
+                                ${feed.name || 'Unnamed'} (${feed.target_language})
+                            </option>
+                        `).join('') || ''}
+                    </select>
+                </div>
+                <div>
+                    <button type="submit" class="btn">Filter</button>
+                    <a href="/entries" class="btn btn-secondary">Clear</a>
+                </div>
+            </form>
+        </div>
+        
+        ${entries.length > 0 ? entries.map(entry => `
+            <div class="entry-card">
+                <div class="entry-header">
+                    <div class="entry-title">
+                        <h3>
+                            ${entry.link ? `<a href="${entry.link}" target="_blank">${entry.title || 'Untitled'}</a>` : (entry.title || 'Untitled')}
+                        </h3>
+                        ${entry.translated_title ? `<div class="translated-title">${entry.translated_title}</div>` : ''}
+                        <div class="entry-meta">
+                            <strong>Feed:</strong> 
+                            <a href="/feeds/${entry.feed_slug || entry.feed_id}/edit">${entry.feed_name || 'Unknown Feed'}</a>
+                            | <strong>Language:</strong> ${entry.target_language || 'Unknown'}
+                            | <strong>Published:</strong> ${entry.published ? new Date(entry.published).toLocaleString() : 'Unknown'}
+                            ${entry.author ? `| <strong>Author:</strong> ${entry.author}` : ''}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="entry-content">
+                    ${entry.content ? `
+                    <div class="entry-section">
+                        <h4>Original Content</h4>
+                        <div class="content">${entry.content}</div>
+                    </div>` : ''}
+                    
+                    ${entry.translated_content ? `
+                    <div class="entry-section">
+                        <h4>Translated Content</h4>
+                        <div class="content">${entry.translated_content}</div>
+                    </div>` : ''}
+                    
+                    ${entry.summary ? `
+                    <div class="entry-section">
+                        <h4>Summary</h4>
+                        <div class="content">${entry.summary}</div>
+                    </div>` : ''}
+                </div>
+                
+                <div class="entry-stats">
+                    ${entry.tokens_used ? `<span>🔢 ${entry.tokens_used} tokens</span>` : ''}
+                    ${entry.characters_used ? `<span>📝 ${entry.characters_used} characters</span>` : ''}
+                    <span>⏰ Created: ${new Date(entry.created_at).toLocaleString()}</span>
+                </div>
+            </div>
+        `).join('') : '<p>No entries found.</p>'}
+        
+        ${entries.length === limit ? `
+        <div style="text-align: center; margin-top: 20px;">
+            <a href="?page=${page + 1}${feedId ? '&feed_id=' + feedId : ''}" class="btn">Load More</a>
+        </div>` : ''}
+    </div>
+</body>
+</html>`;
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Entries page failed:', error);
+    return c.html(`<h1>Error</h1><p>Failed to load entries: ${error.message}</p>`, 500);
   }
 });
