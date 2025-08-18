@@ -22,7 +22,6 @@ database_id = "505bce6e-5289-49cc-8613-560c3086096f"
 # KV Storage configuration  
 [[kv_namespaces]]
 binding = "CACHE"
-database_name = "rss-translator-cache"
 id = "fb058dac8a20401bb55ea18c4c06bd6a"
 
 # Required secrets (set via Dashboard or wrangler secret put):
