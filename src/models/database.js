@@ -153,6 +153,22 @@ export class Database {
       )
     `).run();
 
+    // System logs table
+    await this.db.prepare(`
+      CREATE TABLE IF NOT EXISTS logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        level TEXT NOT NULL, -- 'info', 'warn', 'error', 'debug'
+        category TEXT NOT NULL, -- 'feed', 'translation', 'system', 'api'
+        message TEXT NOT NULL,
+        details TEXT, -- JSON details
+        feed_id INTEGER,
+        agent_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (feed_id) REFERENCES feeds (id) ON DELETE SET NULL,
+        FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE SET NULL
+      )
+    `).run();
+
     console.log('Database tables created successfully');
   }
 
@@ -218,6 +234,72 @@ export class Database {
 
   async deleteFeed(id) {
     return await this.db.prepare('DELETE FROM feeds WHERE id = ?').bind(id).run();
+  }
+
+  // Log methods
+  async addLog(level, category, message, details = null, feedId = null, agentId = null) {
+    return await this.db.prepare(`
+      INSERT INTO logs (level, category, message, details, feed_id, agent_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(level, category, message, details ? JSON.stringify(details) : null, feedId, agentId).run();
+  }
+
+  async getLogs(limit = 100, offset = 0, level = null, category = null) {
+    let query = `
+      SELECT l.*, f.name as feed_name, a.name as agent_name
+      FROM logs l
+      LEFT JOIN feeds f ON l.feed_id = f.id
+      LEFT JOIN agents a ON l.agent_id = a.id
+    `;
+    
+    const conditions = [];
+    const params = [];
+    
+    if (level) {
+      conditions.push('l.level = ?');
+      params.push(level);
+    }
+    
+    if (category) {
+      conditions.push('l.category = ?');
+      params.push(category);
+    }
+    
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    query += ' ORDER BY l.created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+    
+    return await this.db.prepare(query).bind(...params).all();
+  }
+
+  async getLogStats() {
+    const result = await this.db.prepare(`
+      SELECT 
+        level,
+        COUNT(*) as count
+      FROM logs 
+      WHERE created_at > datetime('now', '-24 hours')
+      GROUP BY level
+    `).all();
+    
+    const stats = { total: 0, info: 0, warn: 0, error: 0, debug: 0 };
+    
+    result.forEach(row => {
+      stats[row.level] = row.count;
+      stats.total += row.count;
+    });
+    
+    return stats;
+  }
+
+  async clearOldLogs(daysToKeep = 30) {
+    return await this.db.prepare(`
+      DELETE FROM logs 
+      WHERE created_at < datetime('now', '-${daysToKeep} days')
+    `).run();
   }
 
   generateSlug(feedUrl, targetLanguage, secretKey = 'default-secret') {

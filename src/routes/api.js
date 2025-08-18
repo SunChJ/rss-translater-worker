@@ -182,6 +182,13 @@ apiRoutes.post('/feeds/:id/translate', async (c) => {
       total_characters: (feed.total_characters || 0) + totalCharactersUsed
     });
     
+    // Log successful translation
+    await db.addLog('info', 'translation', `Manual translation completed for feed: ${feed.name}`, {
+      entries_translated: translatedCount,
+      tokens_used: totalTokensUsed,
+      characters_used: totalCharactersUsed
+    }, parseInt(id));
+    
     return c.json({ 
       success: true,
       message: 'Translation completed successfully',
@@ -192,6 +199,13 @@ apiRoutes.post('/feeds/:id/translate', async (c) => {
     
   } catch (error) {
     console.error('Manual translation failed:', error);
+    
+    // Log translation error
+    await db.addLog('error', 'translation', `Manual translation failed for feed ID ${id}: ${error.message}`, {
+      error: error.message,
+      stack: error.stack
+    }, parseInt(id)).catch(e => console.error('Failed to log error:', e));
+    
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -224,11 +238,23 @@ apiRoutes.post('/feeds/:id/update', async (c) => {
         });
       }
       
+      // Log successful update
+      await db.addLog('info', 'feed', `Feed updated successfully: ${feed.name}`, {
+        entries_processed: result.entries?.length || 0,
+        etag: result.etag
+      }, feed.id);
+      
       return c.json({ 
         message: 'Feed updated successfully',
         entries_processed: result.entries?.length || 0
       });
     } else {
+      // Log failed update
+      await db.addLog('error', 'feed', `Feed update failed: ${feed.name}`, {
+        error: result.error,
+        details: result.error
+      }, feed.id);
+      
       return c.json({ 
         error: 'Feed update failed',
         details: result.error 
@@ -236,6 +262,13 @@ apiRoutes.post('/feeds/:id/update', async (c) => {
     }
   } catch (error) {
     console.error('Manual feed update failed:', error);
+    
+    // Log system error
+    await db.addLog('error', 'feed', `Feed update system error for feed ID ${id}: ${error.message}`, {
+      error: error.message,
+      stack: error.stack
+    }, parseInt(id)).catch(e => console.error('Failed to log error:', e));
+    
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

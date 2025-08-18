@@ -3,6 +3,11 @@ main = "src/index.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# Custom domain routes
+[[routes]]
+pattern = "s.samsoncj.xyz/*"
+zone_name = "samsoncj.xyz"
+
 # Cron triggers for feed updates
 [triggers]
 crons = ["*/30 * * * *"]

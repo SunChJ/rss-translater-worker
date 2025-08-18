@@ -50,6 +50,7 @@ function getNavigation() {
             <a href="/">Dashboard</a>
             <a href="/feeds">RSS Feeds</a>
             <a href="/agents">Translation Agents</a>
+            <a href="/logs">System Logs</a>
         </div>
     `;
 }
@@ -684,7 +685,6 @@ adminRoutes.get('/feeds/:id/edit', async (c) => {
                 <label class="form-label">Translation Status & RSS Output</label>
                 <div style="margin-bottom: 15px;">
                     ${(() => {
-                        let statusInfo = '';
                         let statusClass = 'status-warning';
                         let statusIcon = '⏳';
                         let statusText = 'Not Started';
@@ -1121,5 +1121,169 @@ adminRoutes.get('/db-status', async (c) => {
       error: error.message,
       status: 'error'
     }, 500);
+  }
+});
+
+// System Logs page
+adminRoutes.get('/logs', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    
+    // Get query parameters for filtering
+    const level = c.req.query('level') || '';
+    const category = c.req.query('category') || '';
+    const page = parseInt(c.req.query('page') || '1');
+    const limit = 50;
+    const offset = (page - 1) * limit;
+    
+    // Get logs and stats
+    const logs = await db.getLogs(limit, offset, level || null, category || null);
+    const stats = await db.getLogStats();
+    
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+    <title>System Logs - RSS Translator Admin</title>
+    <meta charset="UTF-8">
+    <style>
+        ${commonStyles}
+        .log-entry {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .log-info { border-left-color: #007bff; background: #e7f3ff; }
+        .log-warn { border-left-color: #ffc107; background: #fffbf0; }
+        .log-error { border-left-color: #dc3545; background: #ffebee; }
+        .log-debug { border-left-color: #6c757d; background: #f8f9fa; }
+        .log-header {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .log-time {
+            color: #666;
+            font-size: 12px;
+        }
+        .log-details {
+            margin-top: 5px;
+            padding: 5px;
+            background: rgba(0,0,0,0.05);
+            border-radius: 3px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .log-filters {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .log-stats {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .log-stat {
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            text-align: center;
+            flex: 1;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>System Logs</h1>
+            ${getNavigation()}
+        </div>
+        
+        <div class="log-stats">
+            <div class="log-stat">
+                <div style="font-size: 24px; font-weight: bold;">${stats.total}</div>
+                <div style="color: #666;">Total (24h)</div>
+            </div>
+            <div class="log-stat">
+                <div style="font-size: 24px; font-weight: bold; color: #007bff;">${stats.info}</div>
+                <div style="color: #666;">Info</div>
+            </div>
+            <div class="log-stat">
+                <div style="font-size: 24px; font-weight: bold; color: #ffc107;">${stats.warn}</div>
+                <div style="color: #666;">Warnings</div>
+            </div>
+            <div class="log-stat">
+                <div style="font-size: 24px; font-weight: bold; color: #dc3545;">${stats.error}</div>
+                <div style="color: #666;">Errors</div>
+            </div>
+            <div class="log-stat">
+                <div style="font-size: 24px; font-weight: bold; color: #6c757d;">${stats.debug}</div>
+                <div style="color: #666;">Debug</div>
+            </div>
+        </div>
+        
+        <div class="log-filters">
+            <form method="GET" style="display: flex; gap: 10px; align-items: end;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 5px;">Log Level:</label>
+                    <select name="level" class="form-control">
+                        <option value="">All Levels</option>
+                        <option value="info" ${level === 'info' ? 'selected' : ''}>Info</option>
+                        <option value="warn" ${level === 'warn' ? 'selected' : ''}>Warning</option>
+                        <option value="error" ${level === 'error' ? 'selected' : ''}>Error</option>
+                        <option value="debug" ${level === 'debug' ? 'selected' : ''}>Debug</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 5px;">Category:</label>
+                    <select name="category" class="form-control">
+                        <option value="">All Categories</option>
+                        <option value="feed" ${category === 'feed' ? 'selected' : ''}>Feed</option>
+                        <option value="translation" ${category === 'translation' ? 'selected' : ''}>Translation</option>
+                        <option value="system" ${category === 'system' ? 'selected' : ''}>System</option>
+                        <option value="api" ${category === 'api' ? 'selected' : ''}>API</option>
+                    </select>
+                </div>
+                <div>
+                    <button type="submit" class="btn">Filter</button>
+                    <a href="/logs" class="btn btn-secondary">Clear</a>
+                </div>
+            </form>
+        </div>
+        
+        ${logs.length > 0 ? logs.map(log => {
+            const details = log.details ? JSON.parse(log.details) : null;
+            return `
+            <div class="log-entry log-${log.level}">
+                <div class="log-header">
+                    [${log.level.toUpperCase()}] ${log.category.toUpperCase()} - ${log.message}
+                    <span class="log-time">${new Date(log.created_at).toLocaleString()}</span>
+                </div>
+                ${log.feed_name ? `<div><strong>Feed:</strong> ${log.feed_name}</div>` : ''}
+                ${log.agent_name ? `<div><strong>Agent:</strong> ${log.agent_name}</div>` : ''}
+                ${details ? `
+                <div class="log-details">
+                    <strong>Details:</strong><br>
+                    <pre>${JSON.stringify(details, null, 2)}</pre>
+                </div>` : ''}
+            </div>`;
+        }).join('') : '<p>No logs found.</p>'}
+        
+        ${logs.length === limit ? `
+        <div style="text-align: center; margin-top: 20px;">
+            <a href="?page=${page + 1}${level ? '&level=' + level : ''}${category ? '&category=' + category : ''}" class="btn">Load More</a>
+        </div>` : ''}
+    </div>
+</body>
+</html>`;
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Logs page failed:', error);
+    return c.html(`<h1>Error</h1><p>Failed to load logs: ${error.message}</p>`, 500);
   }
 });
