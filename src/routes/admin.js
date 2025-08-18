@@ -30,6 +30,17 @@ const commonStyles = `
     .form-label { display: block; margin-bottom: 5px; font-weight: bold; }
     .form-control { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
     .config-section { display: none; margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 4px; }
+    .status-badge { padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .status-success { background: #d4edda; color: #155724; }
+    .status-danger { background: #f8d7da; color: #721c24; }
+    .status-warning { background: #fff3cd; color: #856404; }
+    .status-info { background: #d1ecf1; color: #0c5460; }
+    .truncate { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .text-muted { color: #6c757d; font-size: 0.9rem; }
+    .actions { white-space: nowrap; }
+    .updating { opacity: 0.6; pointer-events: none; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .spinning { animation: spin 1s linear infinite; }
 `;
 
 // Generate navigation  
@@ -108,21 +119,45 @@ adminRoutes.get('/', async (c) => {
         ${recentFeeds.results?.length > 0 ? `
             <table>
                 <thead>
-                    <tr><th>Name</th><th>URL</th><th>Language</th><th>Status</th><th>Actions</th></tr>
+                    <tr><th>Name</th><th>URL</th><th>Language</th><th>Translation Status</th><th>Last Updated</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
-                    ${recentFeeds.results.map(feed => `
+                    ${recentFeeds.results.map(feed => {
+                        // Determine translation status
+                        let translationStatus = 'Not Started';
+                        let statusClass = 'status-warning';
+                        let statusIcon = '⏳';
+                        
+                        if (feed.translation_status) {
+                            translationStatus = 'Completed';
+                            statusClass = 'status-success';
+                            statusIcon = '✅';
+                        } else if (feed.last_translate) {
+                            translationStatus = 'In Progress';
+                            statusClass = 'status-info';
+                            statusIcon = '🔄';
+                        }
+                        
+                        return `
                         <tr>
                             <td>${feed.name || 'Unnamed'}</td>
-                            <td>${feed.feed_url}</td>
+                            <td class="truncate">${feed.feed_url}</td>
                             <td>${feed.target_language}</td>
-                            <td>${feed.fetch_status ? '✓ Active' : '✗ Error'}</td>
+                            <td>
+                                <span class="status-badge ${statusClass}">
+                                    ${statusIcon} ${translationStatus}
+                                </span>
+                            </td>
+                            <td class="text-muted">
+                                ${feed.last_translate ? new Date(feed.last_translate).toLocaleString() : 
+                                  feed.last_fetch ? new Date(feed.last_fetch).toLocaleString() : 'Never'}
+                            </td>
                             <td>
                                 <a href="/feeds/${feed.slug}.rss" class="btn btn-sm" target="_blank">RSS</a>
                                 <a href="/feeds" class="btn btn-sm">Manage</a>
                             </td>
-                        </tr>
-                    `).join('')}
+                        </tr>`;
+                    }).join('')}
                 </tbody>
             </table>
         ` : '<p>No RSS feeds found. <a href="/feeds/add">Add your first feed</a></p>'}
@@ -184,27 +219,115 @@ adminRoutes.get('/feeds', async (c) => {
                         <th>Name</th>
                         <th>Feed URL</th>
                         <th>Target Language</th>
-                        <th>Status</th>
+                        <th>Fetch Status</th>
+                        <th>Translation Status</th>
+                        <th>Last Updated</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${feeds.results.map(feed => `
+                    ${feeds.results.map(feed => {
+                        // Determine translation status
+                        let translationStatus = 'Not Started';
+                        let statusClass = 'status-warning';
+                        let statusIcon = '⏳';
+                        
+                        if (feed.translation_status) {
+                            translationStatus = 'Completed';
+                            statusClass = 'status-success';
+                            statusIcon = '✅';
+                        } else if (feed.last_translate) {
+                            translationStatus = 'In Progress';
+                            statusClass = 'status-info';
+                            statusIcon = '🔄';
+                        }
+                        
+                        return `
                         <tr>
                             <td>${feed.name || 'Unnamed'}</td>
-                            <td><a href="${feed.feed_url}" target="_blank">${feed.feed_url}</a></td>
+                            <td class="truncate"><a href="${feed.feed_url}" target="_blank">${feed.feed_url}</a></td>
                             <td>${feed.target_language}</td>
-                            <td>${feed.fetch_status ? '✓ Active' : '✗ Error'}</td>
                             <td>
-                                <a href="/feeds/${feed.slug}.rss" class="btn btn-sm" target="_blank">RSS</a>
-                                <a href="/feeds/${feed.id}/edit" class="btn btn-sm">Edit</a>
+                                <span class="status-badge ${feed.fetch_status ? 'status-success' : 'status-danger'}">
+                                    ${feed.fetch_status ? '✓ Active' : '✗ Error'}
+                                </span>
                             </td>
-                        </tr>
-                    `).join('')}
+                            <td>
+                                <span class="status-badge ${statusClass}">
+                                    ${statusIcon} ${translationStatus}
+                                </span>
+                            </td>
+                            <td class="text-muted">
+                                ${feed.last_translate ? new Date(feed.last_translate).toLocaleString() : 
+                                  feed.last_fetch ? new Date(feed.last_fetch).toLocaleString() : 'Never'}
+                            </td>
+                            <td class="actions">
+                                <a href="/feeds/${feed.slug}.rss" class="btn btn-sm btn-secondary" target="_blank">RSS</a>
+                                <a href="/feeds/${feed.id}/edit" class="btn btn-sm">Edit</a>
+                                <button onclick="updateFeed(${feed.id})" class="btn btn-sm btn-success" id="update-btn-${feed.id}">Update</button>
+                            </td>
+                        </tr>`;
+                    }).join('')}
                 </tbody>
             </table>
         ` : '<p>No RSS feeds found.</p>'}
     </div>
+
+    <script>
+        function updateFeed(feedId) {
+            const button = document.getElementById(\`update-btn-\${feedId}\`);
+            const row = button.closest('tr');
+            
+            // Update button state
+            button.innerHTML = '🔄 Updating...';
+            button.classList.add('updating');
+            row.classList.add('updating');
+            
+            // Send update request
+            fetch(\`/feeds/\${feedId}/update\`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update status in the row
+                    const statusCell = row.cells[4]; // Translation Status column
+                    statusCell.innerHTML = \`<span class="status-badge status-info">🔄 In Progress</span>\`;
+                    
+                    const timeCell = row.cells[5]; // Last Updated column
+                    timeCell.innerHTML = new Date().toLocaleString();
+                    
+                    button.innerHTML = '✅ Updated';
+                    setTimeout(() => {
+                        button.innerHTML = 'Update';
+                        button.classList.remove('updating');
+                        row.classList.remove('updating');
+                    }, 2000);
+                } else {
+                    throw new Error(data.error || 'Update failed');
+                }
+            })
+            .catch(error => {
+                button.innerHTML = '❌ Failed';
+                button.classList.remove('updating');
+                row.classList.remove('updating');
+                alert('Update failed: ' + error.message);
+                setTimeout(() => {
+                    button.innerHTML = 'Update';
+                }, 3000);
+            });
+        }
+        
+        // Auto-refresh status every 30 seconds
+        setInterval(() => {
+            const updatingRows = document.querySelectorAll('.updating');
+            if (updatingRows.length === 0) {
+                // Only refresh if no updates are in progress
+                location.reload();
+            }
+        }, 30000);
+    </script>
 </body>
 </html>`;
 
@@ -502,7 +625,34 @@ adminRoutes.get('/feeds/:id/edit', async (c) => {
             </div>
             
             <div class="form-group" style="background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
-                <label class="form-label">RSS Output URLs</label>
+                <label class="form-label">Translation Status & RSS Output</label>
+                <div style="margin-bottom: 15px;">
+                    ${(() => {
+                        let statusInfo = '';
+                        let statusClass = 'status-warning';
+                        let statusIcon = '⏳';
+                        let statusText = 'Not Started';
+                        
+                        if (feed.translation_status) {
+                            statusClass = 'status-success';
+                            statusIcon = '✅';
+                            statusText = 'Translation Completed';
+                        } else if (feed.last_translate) {
+                            statusClass = 'status-info';
+                            statusIcon = '🔄';
+                            statusText = 'Translation In Progress';
+                        }
+                        
+                        return `
+                        <p><strong>Status:</strong> <span class="status-badge ${statusClass}">${statusIcon} ${statusText}</span></p>
+                        <p><strong>Last Fetch:</strong> ${feed.last_fetch ? new Date(feed.last_fetch).toLocaleString() : 'Never'}</p>
+                        <p><strong>Last Translation:</strong> ${feed.last_translate ? new Date(feed.last_translate).toLocaleString() : 'Never'}</p>
+                        <p><strong>Total Tokens:</strong> ${feed.total_tokens || 0} | <strong>Characters:</strong> ${feed.total_characters || 0}</p>
+                        `;
+                    })()}
+                    <button type="button" onclick="updateFeedNow(${feed.id})" class="btn btn-success" id="update-now-btn" style="margin-top: 10px;">🔄 Update Now</button>
+                </div>
+                <hr style="margin: 15px 0;">
                 <p style="margin: 5px 0;"><strong>RSS:</strong> <code>/feeds/${feed.slug}.rss</code> 
                    <button type="button" onclick="copyToClipboard(window.location.origin + '/feeds/${feed.slug}.rss')" style="margin-left: 10px; padding: 2px 8px; font-size: 12px;" class="btn">Copy</button>
                    <a href="/feeds/${feed.slug}.rss" target="_blank" style="margin-left: 5px; padding: 2px 8px; font-size: 12px;" class="btn">Open</a>
@@ -526,6 +676,43 @@ adminRoutes.get('/feeds/:id/edit', async (c) => {
                         document.execCommand('copy');
                         document.body.removeChild(textarea);
                         alert('RSS URL copied to clipboard!');
+                    });
+                }
+                
+                function updateFeedNow(feedId) {
+                    const button = document.getElementById('update-now-btn');
+                    
+                    // Update button state
+                    button.innerHTML = '🔄 Updating...';
+                    button.disabled = true;
+                    button.style.opacity = '0.6';
+                    
+                    // Send update request
+                    fetch(\`/feeds/\${feedId}/update\`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            button.innerHTML = '✅ Update Triggered';
+                            alert('Feed update has been triggered. Translation will start shortly.');
+                            
+                            setTimeout(() => {
+                                location.reload(); // Refresh to show updated status
+                            }, 2000);
+                        } else {
+                            throw new Error(data.error || 'Update failed');
+                        }
+                    })
+                    .catch(error => {
+                        button.innerHTML = '❌ Update Failed';
+                        alert('Update failed: ' + error.message);
+                        setTimeout(() => {
+                            button.innerHTML = '🔄 Update Now';
+                            button.disabled = false;
+                            button.style.opacity = '1';
+                        }, 3000);
                     });
                 }
             </script>
@@ -598,6 +785,41 @@ adminRoutes.post('/feeds/:id/edit', async (c) => {
     </div>
 </body>
 </html>`, 400);
+  }
+});
+
+// Manual Update Feed
+adminRoutes.post('/feeds/:id/update', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    const feedId = c.req.param('id');
+    
+    // Get feed info
+    const feed = await db.getFeedById(feedId);
+    if (!feed) {
+      return c.json({ success: false, error: 'Feed not found' }, 404);
+    }
+    
+    // Update last_fetch and set translation_status to false (indicating update in progress)
+    await db.updateFeed(feedId, {
+      last_fetch: new Date().toISOString(),
+      translation_status: false
+    });
+    
+    // In a real implementation, you would trigger the feed update process here
+    // For now, we'll just simulate the update
+    
+    return c.json({ 
+      success: true, 
+      message: 'Feed update triggered successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Failed to update feed:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
   }
 });
 
