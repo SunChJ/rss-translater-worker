@@ -183,10 +183,8 @@ api.post('/translation/test-agent', async (c) => {
   }
 });
 
-export { api as apiRoutes };
-
 // Feed management endpoints
-apiRoutes.get('/feeds', async (c) => {
+api.get('/feeds', async (c) => {
   try {
     const db = new Database(c.env.DB);
     const page = parseInt(c.req.query('page') || '1');
@@ -209,7 +207,7 @@ apiRoutes.get('/feeds', async (c) => {
   }
 });
 
-apiRoutes.post('/feeds', async (c) => {
+api.post('/feeds', async (c) => {
   try {
     const data = await c.req.json();
     const db = new Database(c.env.DB);
@@ -242,7 +240,7 @@ apiRoutes.post('/feeds', async (c) => {
   }
 });
 
-apiRoutes.get('/feeds/:id', async (c) => {
+api.get('/feeds/:id', async (c) => {
   try {
     const { id } = c.req.param();
     const db = new Database(c.env.DB);
@@ -259,7 +257,7 @@ apiRoutes.get('/feeds/:id', async (c) => {
   }
 });
 
-apiRoutes.put('/feeds/:id', async (c) => {
+api.put('/feeds/:id', async (c) => {
   try {
     const { id } = c.req.param();
     const data = await c.req.json();
@@ -279,7 +277,7 @@ apiRoutes.put('/feeds/:id', async (c) => {
   }
 });
 
-apiRoutes.delete('/feeds/:id', async (c) => {
+api.delete('/feeds/:id', async (c) => {
   try {
     const { id } = c.req.param();
     const db = new Database(c.env.DB);
@@ -297,190 +295,20 @@ apiRoutes.delete('/feeds/:id', async (c) => {
   }
 });
 
-// Manually trigger translation only
-apiRoutes.post('/feeds/:id/translate', async (c) => {
-  try {
-    const { id } = c.req.param();
-    const db = new Database(c.env.DB);
-    
-    const feed = await db.getFeedById(parseInt(id));
-    if (!feed) {
-      return c.json({ error: 'Feed not found' }, 404);
-    }
-    
-    // Get existing entries for translation
-    const entries = await db.getEntriesByFeedId(parseInt(id), 20); // Get last 20 entries
-    
-    console.log('Entries found for translation:', entries.length);
-    if (!entries || entries.length === 0) {
-      return c.json({ error: 'No entries found to translate. Please update feed first.' }, 400);
-    }
-    
-    const agentManager = new AgentManager(c.env, db);
-    const processor = new FeedProcessor(c.env);
-    
-    let totalTokensUsed = 0;
-    let totalCharactersUsed = 0;
-    let translatedCount = 0;
-    
-    // Translate existing entries
-    for (const entry of entries) {
-      try {
-        console.log(`Processing entry ${entry.id}: title="${entry.title}", has_translated_content=${!!entry.translated_content}`);
-        if (!entry.translated_content || !entry.translated_title) {
-          const entryData = {
-            title: entry.title,
-            content: entry.content,
-            link: entry.link,
-            author: entry.author,
-            published: entry.published,
-            guid: entry.guid
-          };
-          
-          console.log(`Translating entry ${entry.id} with agent ${feed.translator_id}`);
-          const result = await processor.translateEntry(entryData, feed, agentManager);
-          console.log(`Translation result for entry ${entry.id}:`, result);
-          
-          // Update entry with translation
-          await db.updateEntry(entry.id, {
-            translated_title: result.translated_title,
-            translated_content: result.translated_content,
-            tokens_used: result.tokens_used,
-            characters_used: result.characters_used
-          });
-          
-          totalTokensUsed += result.tokens_used || 0;
-          totalCharactersUsed += result.characters_used || 0;
-          translatedCount++;
-        } else {
-          console.log(`Entry ${entry.id} already translated, skipping`);
-        }
-      } catch (error) {
-        console.error(`Failed to translate entry ${entry.id}:`, error);
-      }
-    }
-    
-    // Update feed translation status and token usage
-    await db.updateFeed(parseInt(id), {
-      last_translate: new Date().toISOString(),
-      translation_status: true,
-      total_tokens: (feed.total_tokens || 0) + totalTokensUsed,
-      total_characters: (feed.total_characters || 0) + totalCharactersUsed
-    });
-    
-    // Log successful translation
-    await db.addLog('info', 'translation', `Manual translation completed for feed: ${feed.name}`, {
-      entries_translated: translatedCount,
-      tokens_used: totalTokensUsed,
-      characters_used: totalCharactersUsed
-    }, parseInt(id));
-    
-    return c.json({ 
-      success: true,
-      message: 'Translation completed successfully',
-      entries_translated: translatedCount,
-      tokens_used: totalTokensUsed,
-      characters_used: totalCharactersUsed
-    });
-    
-  } catch (error) {
-    console.error('Manual translation failed:', error);
-    
-    // Log translation error
-    await db.addLog('error', 'translation', `Manual translation failed for feed ID ${id}: ${error.message}`, {
-      error: error.message,
-      stack: error.stack
-    }, parseInt(id)).catch(e => console.error('Failed to log error:', e));
-    
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// Manually trigger feed update
-apiRoutes.post('/feeds/:id/update', async (c) => {
-  try {
-    const { id } = c.req.param();
-    const db = new Database(c.env.DB);
-    
-    const feed = await db.getFeedById(parseInt(id));
-    if (!feed) {
-      return c.json({ error: 'Feed not found' }, 404);
-    }
-    
-    const agentManager = new AgentManager(c.env, db);
-    const processor = new FeedProcessor(c.env);
-    
-    const result = await processor.processFeed(feed, agentManager);
-    
-    if (result.success) {
-      // Update feed metadata
-      await db.updateFeed(feed.id, result.feedUpdates);
-      
-      // Save entries
-      for (const entry of result.entries || []) {
-        await db.createEntry({
-          ...entry,
-          feed_id: feed.id
-        });
-      }
-      
-      // Log successful update
-      await db.addLog('info', 'feed', `Feed updated successfully: ${feed.name}`, {
-        entries_processed: result.entries?.length || 0,
-        etag: result.etag
-      }, feed.id);
-      
-      return c.json({ 
-        message: 'Feed updated successfully',
-        entries_processed: result.entries?.length || 0
-      });
-    } else {
-      // Log failed update
-      await db.addLog('error', 'feed', `Feed update failed: ${feed.name}`, {
-        error: result.error,
-        details: result.error
-      }, feed.id);
-      
-      return c.json({ 
-        error: 'Feed update failed',
-        details: result.error 
-      }, 500);
-    }
-  } catch (error) {
-    console.error('Manual feed update failed:', error);
-    
-    // Log system error
-    await db.addLog('error', 'feed', `Feed update system error for feed ID ${id}: ${error.message}`, {
-      error: error.message,
-      stack: error.stack
-    }, parseInt(id)).catch(e => console.error('Failed to log error:', e));
-    
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
 // Agent management endpoints
-apiRoutes.get('/agents', async (c) => {
+api.get('/agents', async (c) => {
   try {
     const db = new Database(c.env.DB);
     const agents = await db.getAgents();
     
-    // Remove sensitive config data from response
-    const safeAgents = agents.results?.map(agent => ({
-      ...agent,
-      config: agent.config ? JSON.parse(agent.config) : {},
-      // Remove sensitive fields
-      api_key: undefined
-    })) || [];
-    
-    return c.json({ agents: safeAgents });
+    return c.json({ agents: agents.results || [] });
   } catch (error) {
     console.error('API agents listing failed:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
-apiRoutes.post('/agents', async (c) => {
+api.post('/agents', async (c) => {
   try {
     const data = await c.req.json();
     const db = new Database(c.env.DB);
@@ -490,24 +318,11 @@ apiRoutes.post('/agents', async (c) => {
       return c.json({ error: 'name and type are required' }, 400);
     }
     
-    // Create and validate agent
-    const agentManager = new AgentManager(c.env, db);
-    const agent = agentManager.createAgent(data.type, data.config || {});
-    
-    const isValid = await agent.validate();
-    
-    const result = await db.createAgent({
-      ...data,
-      valid: isValid,
-      is_ai: agent.isAI
-    });
+    const result = await db.createAgent(data);
     
     if (result.success) {
       const newAgent = await db.getAgentById(result.meta.last_row_id);
-      return c.json({ 
-        agent: newAgent,
-        validation_result: isValid
-      }, 201);
+      return c.json({ agent: newAgent }, 201);
     } else {
       return c.json({ error: 'Failed to create agent' }, 500);
     }
@@ -517,110 +332,186 @@ apiRoutes.post('/agents', async (c) => {
   }
 });
 
-// Test agent endpoint
-apiRoutes.post('/agents/:id/test', async (c) => {
-  try {
-    const { id } = c.req.param();
-    const body = await c.req.json().catch(() => ({})); // Handle empty body
-    const { text = 'Hello, world!', target_language = 'Chinese Simplified' } = body;
-    
-    const db = new Database(c.env.DB);
-    const agentData = await db.getAgentById(parseInt(id));
-    
-    if (!agentData) {
-      return c.json({ success: false, error: 'Agent not found' }, 404);
-    }
-    
-    if (!agentData.valid) {
-      return c.json({ success: false, error: 'Agent is not valid. Please check configuration.' }, 400);
-    }
-    
-    const agentManager = new AgentManager(c.env, db);
-    const agent = agentManager.createAgent(agentData.type, {
-      ...JSON.parse(agentData.config || '{}'),
-      name: agentData.name
-    });
-    
-    const result = await agent.translate(text, target_language);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Translation failed');
-    }
-    
-    // Log successful test
-    await db.addLog('info', 'translation', `Agent test completed successfully: ${agentData.name}`, {
-      test_text: text,
-      translated_text: result.text,
-      target_language,
-      tokens_used: result.tokens,
-      characters_used: result.characters
-    }, null, parseInt(id));
-    
-    return c.json({
-      success: true,
-      translated_text: result.text,
-      agent_name: agentData.name,
-      agent_type: agentData.type,
-      test_text: text,
-      target_language,
-      tokens_used: result.tokens || 0,
-      characters_used: result.characters || 0
-    });
-  } catch (error) {
-    console.error('Agent test failed:', error);
-    
-    // Try to log the error if database is available
-    try {
-      const db = new Database(c.env.DB);
-      await db.addLog('error', 'translation', `Agent test failed for agent ID ${id}: ${error.message}`, {
-        error: error.message,
-        stack: error.stack
-      }, null, parseInt(id));
-    } catch (logError) {
-      console.error('Failed to log test error:', logError);
-    }
-    
-    return c.json({ success: false, error: error.message || 'Translation test failed' }, 500);
-  }
-});
-
-// Validate agent
-apiRoutes.post('/agents/:id/validate', async (c) => {
+api.get('/agents/:id', async (c) => {
   try {
     const { id } = c.req.param();
     const db = new Database(c.env.DB);
     
-    const agentData = await db.getAgentById(parseInt(id));
-    if (!agentData) {
+    const agent = await db.getAgentById(parseInt(id));
+    if (!agent) {
       return c.json({ error: 'Agent not found' }, 404);
     }
     
-    const agentManager = new AgentManager(c.env, db);
-    const agent = agentManager.createAgent(agentData.type, {
-      ...JSON.parse(agentData.config || '{}'),
-      name: agentData.name
-    });
-    
-    const isValid = await agent.validate();
-    
-    // Update agent validation status
-    await db.db.prepare('UPDATE agents SET valid = ?, updated_at = ? WHERE id = ?')
-      .bind(isValid ? 1 : 0, new Date().toISOString(), parseInt(id))
-      .run();
-    
-    return c.json({ 
-      valid: isValid,
-      agent_name: agentData.name,
-      agent_type: agentData.type
-    });
+    return c.json({ agent });
   } catch (error) {
-    console.error('Agent validation failed:', error);
+    console.error('API agent retrieval failed:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
-// Statistics endpoint
-apiRoutes.get('/stats', async (c) => {
+api.put('/agents/:id', async (c) => {
+  try {
+    const { id } = c.req.param();
+    const data = await c.req.json();
+    const db = new Database(c.env.DB);
+    
+    const result = await db.updateAgent(parseInt(id), data);
+    
+    if (result.changes > 0) {
+      const updatedAgent = await db.getAgentById(parseInt(id));
+      return c.json({ agent: updatedAgent });
+    } else {
+      return c.json({ error: 'Agent not found or no changes made' }, 404);
+    }
+  } catch (error) {
+    console.error('API agent update failed:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+api.delete('/agents/:id', async (c) => {
+  try {
+    const { id } = c.req.param();
+    const db = new Database(c.env.DB);
+    
+    const result = await db.deleteAgent(parseInt(id));
+    
+    if (result.changes > 0) {
+      return c.json({ message: 'Agent deleted successfully' });
+    } else {
+      return c.json({ error: 'Agent not found' }, 404);
+    }
+  } catch (error) {
+    console.error('API agent deletion failed:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Test agent endpoint
+api.post('/agents/:id/test', async (c) => {
+  try {
+    const { id } = c.req.param();
+    const db = new Database(c.env.DB);
+    
+    const agent = await db.getAgentById(parseInt(id));
+    if (!agent) {
+      return c.json({ error: 'Agent not found' }, 404);
+    }
+    
+    // Test the agent with a simple translation
+    const agentManager = new AgentManager(c.env);
+    const agentInstance = agentManager.createAgent(agent.type, {
+      ...JSON.parse(agent.config || '{}'),
+      name: agent.name,
+      valid: agent.valid
+    });
+    
+    const testResult = await agentInstance.translate('Hello world', 'Chinese Simplified');
+    
+    return c.json({
+      success: true,
+      agent: agent.name,
+      test_text: 'Hello world',
+      translated_text: testResult.text,
+      tokens_used: testResult.tokens || 0,
+      characters_used: testResult.characters || 0
+    });
+  } catch (error) {
+    console.error('API agent test failed:', error);
+    return c.json({ 
+      success: false,
+      error: error.message 
+    }, 500);
+  }
+});
+
+// Entry management endpoints
+api.get('/entries', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    const page = parseInt(c.req.query('page') || '1');
+    const limit = parseInt(c.req.query('limit') || '20');
+    const offset = (page - 1) * limit;
+    const feedId = c.req.query('feed_id');
+    
+    let query = `
+      SELECT e.*, f.name as feed_name, f.slug as feed_slug, f.target_language
+      FROM entries e
+      LEFT JOIN feeds f ON e.feed_id = f.id
+    `;
+    let params = [];
+    
+    if (feedId) {
+      query += ' WHERE e.feed_id = ?';
+      params.push(parseInt(feedId));
+    }
+    
+    query += ' ORDER BY e.published DESC, e.created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+    
+    const entriesResult = await db.db.prepare(query).bind(...params).all();
+    
+    return c.json({
+      entries: entriesResult.results || [],
+      pagination: {
+        page,
+        limit,
+        total: entriesResult.results?.length || 0
+      }
+    });
+  } catch (error) {
+    console.error('API entries listing failed:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+api.get('/entries/:id', async (c) => {
+  try {
+    const { id } = c.req.param();
+    const db = new Database(c.env.DB);
+    
+    const entry = await db.db.prepare(`
+      SELECT e.*, f.name as feed_name, f.slug as feed_slug, f.target_language
+      FROM entries e
+      LEFT JOIN feeds f ON e.feed_id = f.id
+      WHERE e.id = ?
+    `).bind(parseInt(id)).first();
+    
+    if (!entry) {
+      return c.json({ error: 'Entry not found' }, 404);
+    }
+    
+    return c.json({ entry });
+  } catch (error) {
+    console.error('API entry retrieval failed:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// System endpoints
+api.get('/health', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    
+    // Test database connection
+    await db.db.prepare('SELECT 1').first();
+    
+    return c.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected'
+    });
+  } catch (error) {
+    return c.json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: error.message
+    }, 500);
+  }
+});
+
+api.get('/stats', async (c) => {
   try {
     const db = new Database(c.env.DB);
     
@@ -628,111 +519,21 @@ apiRoutes.get('/stats', async (c) => {
     const agentCount = await db.db.prepare('SELECT COUNT(*) as count FROM agents').first();
     const entryCount = await db.db.prepare('SELECT COUNT(*) as count FROM entries').first();
     
-    const totalTokens = await db.db.prepare('SELECT SUM(total_tokens) as total FROM feeds').first();
-    const totalCharacters = await db.db.prepare('SELECT SUM(total_characters) as total FROM feeds').first();
-    
-    const recentFeeds = await db.db.prepare(`
-      SELECT COUNT(*) as count FROM feeds 
-      WHERE last_fetch > datetime('now', '-24 hours')
-    `).first();
+    const totalTokens = await db.db.prepare('SELECT SUM(tokens_used) as total FROM entries').first();
+    const totalCharacters = await db.db.prepare('SELECT SUM(characters_used) as total FROM entries').first();
     
     return c.json({
-      feeds: {
-        total: feedCount.count,
-        updated_24h: recentFeeds.count
-      },
-      agents: {
-        total: agentCount.count
-      },
-      entries: {
-        total: entryCount.count
-      },
-      usage: {
-        total_tokens: totalTokens.total || 0,
-        total_characters: totalCharacters.total || 0
-      }
+      feeds: feedCount.count || 0,
+      agents: agentCount.count || 0,
+      entries: entryCount.count || 0,
+      total_tokens: totalTokens.total || 0,
+      total_characters: totalCharacters.total || 0,
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Stats retrieval failed:', error);
+    console.error('API stats failed:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
 
-// Cleanup matching translations endpoint
-apiRoutes.post('/cleanup/translations', async (c) => {
-  try {
-    const db = new Database(c.env.DB);
-    
-    // Get entries with matching translations for debugging
-    const matchingEntries = await db.getEntriesWithMatchingTranslations();
-    console.log(`Found ${matchingEntries.length} entries with matching translations`);
-    
-    // Clean up matching translations
-    const result = await db.cleanupMatchingTranslations();
-    
-    // Log the cleanup operation
-    await db.addLog('info', 'system', `Translation cleanup completed`, {
-      entries_found: matchingEntries.length,
-      entries_updated: result.changes || 0
-    });
-    
-    return c.json({
-      success: true,
-      message: 'Translation cleanup completed',
-      entries_found: matchingEntries.length,
-      entries_updated: result.changes || 0,
-      matching_entries: matchingEntries
-    });
-  } catch (error) {
-    console.error('Translation cleanup failed:', error);
-    
-    // Log error
-    try {
-      const db = new Database(c.env.DB);
-      await db.addLog('error', 'system', `Translation cleanup failed: ${error.message}`, {
-        error: error.message,
-        stack: error.stack
-      });
-    } catch (logError) {
-      console.error('Failed to log cleanup error:', logError);
-    }
-    
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// Health check endpoint
-apiRoutes.get('/health', async (c) => {
-  try {
-    const status = {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      services: {
-        database: c.env.DB ? 'configured' : 'missing binding',
-        cache: c.env.CACHE ? 'configured' : 'missing binding'
-      }
-    };
-
-    if (!c.env.DB) {
-      return c.json({
-        ...status,
-        status: 'unhealthy',
-        error: 'Database binding missing'
-      }, 503);
-    }
-
-    // Test database connection
-    const db = new Database(c.env.DB);
-    await db.db.prepare('SELECT 1').first();
-    status.services.database = 'ok';
-    
-    return c.json(status);
-  } catch (error) {
-    console.error('Health check failed:', error);
-    return c.json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      error: error.message
-    }, 503);
-  }
-});
+export { api as apiRoutes };
