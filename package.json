@@ -4,7 +4,6 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "build": "echo \"No build step required for this project\"",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy", 
     "deploy:staging": "wrangler deploy --env staging",

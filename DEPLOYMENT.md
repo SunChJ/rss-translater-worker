@@ -46,7 +46,7 @@ This guide shows how to deploy RSS Translator Worker using Cloudflare Dashboard.
 Project name: rss-translator-worker
 Production branch: main
 Framework preset: None
-Build command: npm run build
+Build command: (leave empty)
 Build output directory: /
 Root directory: (leave empty)
 ```
