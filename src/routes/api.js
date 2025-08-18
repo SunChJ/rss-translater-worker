@@ -117,6 +117,85 @@ apiRoutes.delete('/feeds/:id', async (c) => {
   }
 });
 
+// Manually trigger translation only
+apiRoutes.post('/feeds/:id/translate', async (c) => {
+  try {
+    const { id } = c.req.param();
+    const db = new Database(c.env.DB);
+    
+    const feed = await db.getFeedById(parseInt(id));
+    if (!feed) {
+      return c.json({ error: 'Feed not found' }, 404);
+    }
+    
+    // Get existing entries for translation
+    const entries = await db.getEntriesByFeedId(parseInt(id), 20); // Get last 20 entries
+    
+    if (!entries || entries.length === 0) {
+      return c.json({ error: 'No entries found to translate. Please update feed first.' }, 400);
+    }
+    
+    const agentManager = new AgentManager(c.env, db);
+    const processor = new FeedProcessor(c.env);
+    
+    let totalTokensUsed = 0;
+    let totalCharactersUsed = 0;
+    let translatedCount = 0;
+    
+    // Translate existing entries
+    for (const entry of entries) {
+      try {
+        if (!entry.translated_content || !entry.translated_title) {
+          const entryData = {
+            title: entry.title,
+            content: entry.content,
+            link: entry.link,
+            author: entry.author,
+            published: entry.published,
+            guid: entry.guid
+          };
+          
+          const result = await processor.translateEntry(entryData, feed, agentManager);
+          
+          // Update entry with translation
+          await db.updateEntry(entry.id, {
+            translated_title: result.translated_title,
+            translated_content: result.translated_content,
+            tokens_used: result.tokens_used,
+            characters_used: result.characters_used
+          });
+          
+          totalTokensUsed += result.tokens_used || 0;
+          totalCharactersUsed += result.characters_used || 0;
+          translatedCount++;
+        }
+      } catch (error) {
+        console.error(`Failed to translate entry ${entry.id}:`, error);
+      }
+    }
+    
+    // Update feed translation status and token usage
+    await db.updateFeed(parseInt(id), {
+      last_translate: new Date().toISOString(),
+      translation_status: true,
+      total_tokens: (feed.total_tokens || 0) + totalTokensUsed,
+      total_characters: (feed.total_characters || 0) + totalCharactersUsed
+    });
+    
+    return c.json({ 
+      success: true,
+      message: 'Translation completed successfully',
+      entries_translated: translatedCount,
+      tokens_used: totalTokensUsed,
+      characters_used: totalCharactersUsed
+    });
+    
+  } catch (error) {
+    console.error('Manual translation failed:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Manually trigger feed update
 apiRoutes.post('/feeds/:id/update', async (c) => {
   try {
@@ -128,7 +207,7 @@ apiRoutes.post('/feeds/:id/update', async (c) => {
       return c.json({ error: 'Feed not found' }, 404);
     }
     
-    const agentManager = new AgentManager(c.env);
+    const agentManager = new AgentManager(c.env, db);
     const processor = new FeedProcessor(c.env);
     
     const result = await processor.processFeed(feed, agentManager);
@@ -193,7 +272,7 @@ apiRoutes.post('/agents', async (c) => {
     }
     
     // Create and validate agent
-    const agentManager = new AgentManager(c.env);
+    const agentManager = new AgentManager(c.env, db);
     const agent = agentManager.createAgent(data.type, data.config || {});
     
     const isValid = await agent.validate();
@@ -232,7 +311,7 @@ apiRoutes.post('/agents/:id/test', async (c) => {
       return c.json({ error: 'Agent not found' }, 404);
     }
     
-    const agentManager = new AgentManager(c.env);
+    const agentManager = new AgentManager(c.env, db);
     const agent = agentManager.createAgent(agentData.type, {
       ...JSON.parse(agentData.config || '{}'),
       name: agentData.name
@@ -262,7 +341,7 @@ apiRoutes.post('/agents/:id/validate', async (c) => {
       return c.json({ error: 'Agent not found' }, 404);
     }
     
-    const agentManager = new AgentManager(c.env);
+    const agentManager = new AgentManager(c.env, db);
     const agent = agentManager.createAgent(agentData.type, {
       ...JSON.parse(agentData.config || '{}'),
       name: agentData.name

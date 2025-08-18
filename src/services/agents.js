@@ -1,7 +1,9 @@
 // Translation agents implementation
 export class AgentManager {
-  constructor(env) {
+  constructor(env, database = null) {
     this.env = env;
+    this.db = database;
+    this.agentCache = new Map();
   }
 
   createAgent(type, config) {
@@ -17,6 +19,36 @@ export class AgentManager {
       default:
         throw new Error(`Unknown agent type: ${type}`);
     }
+  }
+
+  async getAgentById(agentId) {
+    if (!this.db) {
+      throw new Error('Database not available for agent lookup');
+    }
+
+    // Check cache first
+    if (this.agentCache.has(agentId)) {
+      return this.agentCache.get(agentId);
+    }
+
+    // Load from database
+    const agentData = await this.db.getAgentById(agentId);
+    if (!agentData) {
+      return null;
+    }
+
+    // Create agent instance
+    const agent = this.createAgent(agentData.type, {
+      ...JSON.parse(agentData.config || '{}'),
+      name: agentData.name,
+      valid: agentData.valid,
+      is_ai: agentData.is_ai
+    });
+
+    // Cache the agent
+    this.agentCache.set(agentId, agent);
+    
+    return agent;
   }
 }
 

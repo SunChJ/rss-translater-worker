@@ -265,6 +265,7 @@ adminRoutes.get('/feeds', async (c) => {
                                 <a href="/feeds/${feed.slug}.rss" class="btn btn-sm btn-secondary" target="_blank">RSS</a>
                                 <a href="/feeds/${feed.id}/edit" class="btn btn-sm">Edit</a>
                                 <button onclick="updateFeed(${feed.id})" class="btn btn-sm btn-success" id="update-btn-${feed.id}">Update</button>
+                                <button onclick="translateFeed(${feed.id})" class="btn btn-sm btn-info" id="translate-btn-${feed.id}">Translate</button>
                             </td>
                         </tr>`;
                     }).join('')}
@@ -315,6 +316,61 @@ adminRoutes.get('/feeds', async (c) => {
                 alert('Update failed: ' + error.message);
                 setTimeout(() => {
                     button.innerHTML = 'Update';
+                }, 3000);
+            });
+        }
+        
+        function translateFeed(feedId) {
+            const button = document.getElementById(\`translate-btn-\${feedId}\`);
+            const row = button.closest('tr');
+            
+            // Update button state
+            button.innerHTML = '🔄 Translating...';
+            button.classList.add('updating');
+            row.classList.add('updating');
+            
+            // Send translate request
+            fetch(\`/api/feeds/\${feedId}/translate\`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update status in the row
+                    const statusCell = row.cells[4]; // Translation Status column
+                    statusCell.innerHTML = \`<span class="status-badge status-success">✅ Completed</span>\`;
+                    
+                    const timeCell = row.cells[5]; // Last Updated column
+                    timeCell.innerHTML = new Date().toLocaleString();
+                    
+                    // Show token usage if available
+                    if (data.tokens_used || data.characters_used) {
+                        const tokenInfo = [];
+                        if (data.tokens_used) tokenInfo.push(\`\${data.tokens_used} tokens\`);
+                        if (data.characters_used) tokenInfo.push(\`\${data.characters_used} chars\`);
+                        
+                        button.innerHTML = \`✅ Done (\${tokenInfo.join(', ')})\`;
+                    } else {
+                        button.innerHTML = '✅ Translated';
+                    }
+                    
+                    setTimeout(() => {
+                        button.innerHTML = 'Translate';
+                        button.classList.remove('updating');
+                        row.classList.remove('updating');
+                    }, 3000);
+                } else {
+                    throw new Error(data.error || 'Translation failed');
+                }
+            })
+            .catch(error => {
+                button.innerHTML = '❌ Failed';
+                button.classList.remove('updating');
+                row.classList.remove('updating');
+                alert('Translation failed: ' + error.message);
+                setTimeout(() => {
+                    button.innerHTML = 'Translate';
                 }, 3000);
             });
         }
