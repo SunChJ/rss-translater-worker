@@ -186,7 +186,12 @@ export class Database {
   }
 
   async getFeedBySlug(slug) {
-    return await this.db.prepare('SELECT * FROM feeds WHERE slug = ?').bind(slug).first();
+    if (!slug || slug === undefined || slug === null) {
+      console.error('getFeedBySlug called with invalid slug:', slug);
+      return null;
+    }
+    
+    return await this.db.prepare('SELECT * FROM feeds WHERE slug = ?').bind(String(slug)).first();
   }
 
   async createFeed(data) {
@@ -349,12 +354,21 @@ export class Database {
 
   // Entry methods
   async getEntriesByFeedId(feedId, limit = 50) {
+    if (feedId === undefined || feedId === null) {
+      console.error('getEntriesByFeedId called with undefined/null feedId:', feedId);
+      return [];
+    }
+    
+    if (limit === undefined || limit === null || limit < 1) {
+      limit = 50;
+    }
+    
     const result = await this.db.prepare(`
       SELECT * FROM entries 
       WHERE feed_id = ? 
       ORDER BY published DESC 
       LIMIT ?
-    `).bind(feedId, limit).all();
+    `).bind(parseInt(feedId), parseInt(limit)).all();
     return result.results || [];
   }
 

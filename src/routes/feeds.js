@@ -9,14 +9,27 @@ feedRoutes.get('/:slug.rss', async (c) => {
   try {
     const { slug } = c.req.param();
     console.log('RSS request for slug:', slug);
+    
+    if (!slug) {
+      return c.text('Invalid slug parameter', 400);
+    }
+    
     const db = new Database(c.env.DB);
     
+    console.log('About to query database for slug:', slug, 'type:', typeof slug);
     const feed = await db.getFeedBySlug(slug);
     console.log('Feed found:', feed ? 'yes' : 'no');
+    console.log('Feed data:', feed);
     if (!feed) {
       return c.text('Feed not found', 404);
     }
 
+    if (!feed.id) {
+      console.error('Feed has no ID:', feed);
+      return c.text('Feed data corrupted - missing ID', 500);
+    }
+
+    console.log('About to query entries for feed.id:', feed.id, 'max_posts:', feed.max_posts);
     const entries = await db.getEntriesByFeedId(feed.id, feed.max_posts || 20);
     console.log('Entries found:', entries.length);
     console.log('Sample entry:', entries[0] ? {
