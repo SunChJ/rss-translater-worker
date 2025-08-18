@@ -8,6 +8,29 @@ export class Database {
     await this.createTables();
   }
 
+  async isInitialized() {
+    try {
+      // Check if the main tables exist by querying them
+      await this.db.prepare('SELECT 1 FROM feeds LIMIT 1').first();
+      await this.db.prepare('SELECT 1 FROM agents LIMIT 1').first();
+      await this.db.prepare('SELECT 1 FROM entries LIMIT 1').first();
+      return true;
+    } catch (error) {
+      // If any table doesn't exist, consider database not initialized
+      return false;
+    }
+  }
+
+  async ensureInitialized() {
+    const isInit = await this.isInitialized();
+    if (!isInit) {
+      console.log('Database not initialized, creating tables...');
+      await this.init();
+      console.log('Database tables created successfully');
+    }
+    return !isInit; // Return true if we just initialized
+  }
+
   async createTables() {
     // Feeds table
     await this.db.prepare(`

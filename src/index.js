@@ -5,8 +5,34 @@ import { prettyJSON } from 'hono/pretty-json';
 import { feedRoutes } from './routes/feeds.js';
 import { adminRoutes } from './routes/admin.js';
 import { apiRoutes } from './routes/api.js';
+import { Database } from './models/database.js';
 
 const app = new Hono();
+
+// Auto-initialization middleware
+app.use('*', async (c, next) => {
+  // Only initialize for routes that need database access
+  const needsDB = c.req.path.startsWith('/admin') || 
+                  c.req.path.startsWith('/api') || 
+                  c.req.path.startsWith('/feeds');
+  
+  if (needsDB && c.env.DB) {
+    try {
+      const db = new Database(c.env.DB);
+      const wasInitialized = await db.ensureInitialized();
+      
+      if (wasInitialized) {
+        // Add a header to indicate auto-initialization occurred
+        c.header('X-Auto-Initialized', 'true');
+      }
+    } catch (error) {
+      console.error('Database auto-initialization failed:', error);
+      // Continue anyway - let individual routes handle database errors
+    }
+  }
+  
+  await next();
+});
 
 // Middleware
 app.use('*', cors({

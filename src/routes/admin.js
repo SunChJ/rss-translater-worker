@@ -22,6 +22,9 @@ adminRoutes.get('/', async (c) => {
 
     const db = new Database(c.env.DB);
     
+    // Check if auto-initialization occurred
+    const autoInitialized = c.req.header('X-Auto-Initialized') === 'true';
+    
     // Get basic statistics
     const feedCount = await db.db.prepare('SELECT COUNT(*) as count FROM feeds').first();
     const agentCount = await db.db.prepare('SELECT COUNT(*) as count FROM agents').first();
@@ -133,6 +136,7 @@ adminRoutes.get('/', async (c) => {
     <div class="container">
         <div class="header">
             <h1>RSS Translator Admin Dashboard</h1>
+            ${autoInitialized ? '<div style="background: #d4edda; color: #155724; padding: 10px; margin: 10px 0; border-radius: 4px; border: 1px solid #c3e6cb;">✅ Database automatically initialized on this request</div>' : ''}
             <div class="nav">
                 <a href="/admin/">Dashboard</a>
                 <a href="/api/feeds">API: Feeds</a>
