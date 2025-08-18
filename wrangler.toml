@@ -14,17 +14,15 @@ DEFAULT_TARGET_LANGUAGE = "Chinese Simplified"
 LOG_LEVEL = "INFO"
 
 # D1 Database configuration
-# Note: When deploying via Dashboard, configure these bindings in the UI
 [[d1_databases]]
 binding = "DB"
 database_name = "rss-translator"
-database_id = ""  # Will be set by Dashboard deployment
+database_id = "505bce6e-5289-49cc-8613-560c3086096f"
 
 # KV Storage configuration  
-# Note: When deploying via Dashboard, configure these bindings in the UI
 [[kv_namespaces]]
 binding = "CACHE"
-id = ""  # Will be set by Dashboard deployment
+id = "fb058dac8a20401bb55ea18c4c06bd6a"
 
 # Required secrets (set via Dashboard or wrangler secret put):
 # - OPENAI_API_KEY (optional)
