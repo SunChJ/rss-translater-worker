@@ -93,7 +93,7 @@ feedRoutes.get('/:slug/info', async (c) => {
     }
 
     const entries = await db.getEntriesByFeedId(feed.id, 1);
-    const entryCount = entries.length;
+    const entryCount = entries ? entries.length : 0;
     
     const info = {
       name: feed.name,

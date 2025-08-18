@@ -1102,6 +1102,10 @@ adminRoutes.get('/agents/add', async (c) => {
                     <input type="password" name="openai_api_key" class="form-control" placeholder="sk-...">
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Base URL (Endpoint)</label>
+                    <input type="text" name="openai_base_url" class="form-control" placeholder="https://api.openai.com/v1" value="https://api.openai.com/v1">
+                </div>
+                <div class="form-group">
                     <label class="form-label">Model</label>
                     <input type="text" name="openai_model" class="form-control" value="gpt-3.5-turbo">
                 </div>
@@ -1112,6 +1116,10 @@ adminRoutes.get('/agents/add', async (c) => {
                 <div class="form-group">
                     <label class="form-label">API Key *</label>
                     <input type="password" name="deepl_api_key" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Server URL (Endpoint)</label>
+                    <input type="text" name="deepl_server_url" class="form-control" placeholder="https://api-free.deepl.com/v2" value="https://api-free.deepl.com/v2">
                 </div>
             </div>
             
@@ -1145,13 +1153,15 @@ adminRoutes.post('/agents/add', async (c) => {
       case 'openai':
         config = {
           api_key: body.openai_api_key,
+          base_url: body.openai_base_url || 'https://api.openai.com/v1',
           model: body.openai_model || 'gpt-3.5-turbo'
         };
         isAI = true;
         break;
       case 'deepl':
         config = {
-          api_key: body.deepl_api_key
+          api_key: body.deepl_api_key,
+          server_url: body.deepl_server_url || 'https://api-free.deepl.com/v2'
         };
         break;
       case 'test':
@@ -1613,11 +1623,13 @@ adminRoutes.get('/entries', async (c) => {
 // Delete Agent
 adminRoutes.post('/agents/:id/delete', async (c) => {
   try {
+    console.log('Delete agent request received for ID:', c.req.param('id'));
     const db = new Database(c.env.DB);
     const agentId = c.req.param('id');
     
     // Check if agent exists
     const agent = await db.getAgentById(parseInt(agentId));
+    console.log('Agent found:', agent);
     if (!agent) {
       return c.json({ success: false, error: 'Agent not found' }, 404);
     }

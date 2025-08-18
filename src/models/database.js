@@ -349,12 +349,13 @@ export class Database {
 
   // Entry methods
   async getEntriesByFeedId(feedId, limit = 50) {
-    return await this.db.prepare(`
+    const result = await this.db.prepare(`
       SELECT * FROM entries 
       WHERE feed_id = ? 
       ORDER BY published DESC 
       LIMIT ?
     `).bind(feedId, limit).all();
+    return result.results || [];
   }
 
   async createEntry(data) {
