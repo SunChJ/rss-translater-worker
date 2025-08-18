@@ -13,7 +13,6 @@ const app = new Hono();
 app.use('*', async (c, next) => {
   // Only initialize for routes that need database access
   const needsDB = c.req.path.startsWith('/admin') || 
-                  c.req.path.startsWith('/api') || 
                   c.req.path.startsWith('/feeds');
   
   if (needsDB && c.env.DB) {
@@ -47,20 +46,12 @@ app.use('/api/*', prettyJSON());
 // Routes
 app.route('/feeds', feedRoutes);
 app.route('/admin', adminRoutes);
-app.route('/api', apiRoutes);
+// API routes disabled - use Web interface instead
+// app.route('/api', apiRoutes);
 
-// Root route
+// Root route - redirect to admin interface
 app.get('/', (c) => {
-  return c.json({
-    name: 'RSS Translator Worker',
-    version: '1.0.0',
-    description: 'RSS Translation service powered by Cloudflare Workers',
-    endpoints: {
-      feeds: '/feeds',
-      admin: '/admin',
-      api: '/api'
-    }
-  });
+  return c.redirect('/admin');
 });
 
 // Health check
