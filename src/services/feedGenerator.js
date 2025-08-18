@@ -166,22 +166,25 @@ export class FeedGenerator {
 
   formatTitle(entry, displayMode) {
     try {
-      const original = entry?.title || '';
-      const translated = entry?.translated_title || '';
+      const original = (entry?.title || '').trim();
+      const translated = (entry?.translated_title || '').trim();
+      
+      // If translation is empty or equals original, treat as no translation
+      const hasValidTranslation = translated && translated !== original;
       
       switch (displayMode) {
         case 0: // Only translation
-          return translated || original || 'Untitled';
+          return hasValidTranslation ? translated : (original || 'Untitled');
         case 1: // Translation | Original
-          return translated && original && translated !== original 
+          return hasValidTranslation 
             ? `${translated} | ${original}` 
-            : (translated || original || 'Untitled');
+            : (original || 'Untitled');
         case 2: // Original | Translation
-          return translated && original && translated !== original 
+          return hasValidTranslation 
             ? `${original} | ${translated}` 
-            : (original || translated || 'Untitled');
+            : (original || 'Untitled');
         default:
-          return translated || original || 'Untitled';
+          return hasValidTranslation ? translated : (original || 'Untitled');
       }
     } catch (error) {
       console.error('Error in formatTitle:', error, entry);
@@ -191,34 +194,37 @@ export class FeedGenerator {
 
   formatContent(entry, displayMode) {
     try {
-      const original = entry?.content || '';
-      const translated = entry?.translated_content || '';
+      const original = (entry?.content || '').trim();
+      const translated = (entry?.translated_content || '').trim();
       const summary = entry?.summary || '';
+      
+      // If translation is empty or equals original, treat as no translation
+      const hasValidTranslation = translated && translated !== original;
       
       let content = '';
       
       switch (displayMode) {
         case 0: // Only translation
-          content = translated || original || '';
+          content = hasValidTranslation ? translated : original;
           break;
         case 1: // Translation | Original
-          if (translated && original && translated !== original) {
+          if (hasValidTranslation) {
             content = `<div class="translated-content">${translated}</div>`;
             content += `<hr><div class="original-content">${original}</div>`;
           } else {
-            content = translated || original || '';
+            content = original;
           }
           break;
         case 2: // Original | Translation
-          if (translated && original && translated !== original) {
+          if (hasValidTranslation) {
             content = `<div class="original-content">${original}</div>`;
             content += `<hr><div class="translated-content">${translated}</div>`;
           } else {
-            content = original || translated || '';
+            content = original;
           }
           break;
         default:
-          content = translated || original || '';
+          content = hasValidTranslation ? translated : original;
       }
       
       // Add summary if available
@@ -226,7 +232,7 @@ export class FeedGenerator {
         content = `<div class="summary"><strong>Summary:</strong> ${summary}</div><hr>${content}`;
       }
       
-      return content;
+      return content || 'Content unavailable';
     } catch (error) {
       console.error('Error in formatContent:', error, entry);
       return 'Content unavailable';

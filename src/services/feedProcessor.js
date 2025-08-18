@@ -433,9 +433,18 @@ export class FeedProcessor {
         );
         
         if (titleResult.success) {
-          result.translated_title = titleResult.text;
-          result.tokens_used += titleResult.tokens || 0;
-          result.characters_used += titleResult.characters || 0;
+          // Check if translation is different from original
+          const originalTitle = entry.title.trim();
+          const translatedTitle = titleResult.text.trim();
+          
+          if (originalTitle !== translatedTitle) {
+            result.translated_title = translatedTitle;
+            result.tokens_used += titleResult.tokens || 0;
+            result.characters_used += titleResult.characters || 0;
+          } else {
+            console.log('Title translation equals original, skipping:', originalTitle);
+            result.translated_title = ''; // Clear translation if it matches original
+          }
         }
       }
 
@@ -448,9 +457,18 @@ export class FeedProcessor {
         );
         
         if (contentResult.success) {
-          result.translated_content = contentResult.text;
-          result.tokens_used += contentResult.tokens || 0;
-          result.characters_used += contentResult.characters || 0;
+          // Check if translation is different from original
+          const originalContent = entry.content.trim();
+          const translatedContent = contentResult.text.trim();
+          
+          if (originalContent !== translatedContent) {
+            result.translated_content = translatedContent;
+            result.tokens_used += contentResult.tokens || 0;
+            result.characters_used += contentResult.characters || 0;
+          } else {
+            console.log('Content translation equals original, skipping:', originalContent.substring(0, 100) + '...');
+            result.translated_content = ''; // Clear translation if it matches original
+          }
         }
       }
 

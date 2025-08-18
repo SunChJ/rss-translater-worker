@@ -54,8 +54,14 @@ feedRoutes.get('/:filename', async (c) => {
       title: entries[0].title,
       translated_title: entries[0].translated_title,
       content_length: entries[0].content?.length || 0,
-      translated_content_length: entries[0].translated_content?.length || 0
+      translated_content_length: entries[0].translated_content?.length || 0,
+      has_translated_content: !!entries[0].translated_content,
+      content_preview: entries[0].content?.substring(0, 100),
+      translated_content_preview: entries[0].translated_content?.substring(0, 100)
     } : 'none');
+    
+    console.log('Feed translation_display mode:', feed.translation_display);
+    console.log('Feed translate_content setting:', feed.translate_content);
     
     const generator = new FeedGenerator();
     

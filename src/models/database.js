@@ -413,4 +413,43 @@ export class Database {
       UPDATE entries SET ${updates.join(', ')} WHERE id = ?
     `).bind(...values).run();
   }
+
+  async cleanupMatchingTranslations() {
+    // Remove entries where translated_title equals title or translated_content equals content
+    const result = await this.db.prepare(`
+      UPDATE entries 
+      SET 
+        translated_title = CASE 
+          WHEN TRIM(translated_title) = TRIM(title) THEN '' 
+          ELSE translated_title 
+        END,
+        translated_content = CASE 
+          WHEN TRIM(translated_content) = TRIM(content) THEN '' 
+          ELSE translated_content 
+        END
+      WHERE 
+        (TRIM(translated_title) = TRIM(title) AND translated_title != '') 
+        OR 
+        (TRIM(translated_content) = TRIM(content) AND translated_content != '')
+    `).run();
+    
+    return result;
+  }
+
+  async getEntriesWithMatchingTranslations() {
+    // Get entries where translation matches original for debugging
+    const result = await this.db.prepare(`
+      SELECT id, title, translated_title, 
+             SUBSTR(content, 1, 100) as content_preview,
+             SUBSTR(translated_content, 1, 100) as translated_content_preview
+      FROM entries 
+      WHERE 
+        (TRIM(translated_title) = TRIM(title) AND translated_title != '') 
+        OR 
+        (TRIM(translated_content) = TRIM(content) AND translated_content != '')
+      LIMIT 50
+    `).all();
+    
+    return result.results || [];
+  }
 }

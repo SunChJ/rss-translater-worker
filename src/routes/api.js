@@ -478,6 +478,49 @@ apiRoutes.get('/stats', async (c) => {
   }
 });
 
+// Cleanup matching translations endpoint
+apiRoutes.post('/cleanup/translations', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    
+    // Get entries with matching translations for debugging
+    const matchingEntries = await db.getEntriesWithMatchingTranslations();
+    console.log(`Found ${matchingEntries.length} entries with matching translations`);
+    
+    // Clean up matching translations
+    const result = await db.cleanupMatchingTranslations();
+    
+    // Log the cleanup operation
+    await db.addLog('info', 'system', `Translation cleanup completed`, {
+      entries_found: matchingEntries.length,
+      entries_updated: result.changes || 0
+    });
+    
+    return c.json({
+      success: true,
+      message: 'Translation cleanup completed',
+      entries_found: matchingEntries.length,
+      entries_updated: result.changes || 0,
+      matching_entries: matchingEntries
+    });
+  } catch (error) {
+    console.error('Translation cleanup failed:', error);
+    
+    // Log error
+    try {
+      const db = new Database(c.env.DB);
+      await db.addLog('error', 'system', `Translation cleanup failed: ${error.message}`, {
+        error: error.message,
+        stack: error.stack
+      });
+    } catch (logError) {
+      console.error('Failed to log cleanup error:', logError);
+    }
+    
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Health check endpoint
 apiRoutes.get('/health', async (c) => {
   try {
