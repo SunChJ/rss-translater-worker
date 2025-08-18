@@ -6,6 +6,20 @@ export const adminRoutes = new Hono();
 // Simple admin dashboard
 adminRoutes.get('/', async (c) => {
   try {
+    // Check if database binding exists
+    if (!c.env.DB) {
+      return c.html(`
+        <h1>Configuration Required</h1>
+        <p>D1 Database binding is not configured. Please:</p>
+        <ol>
+          <li>Create a D1 database in Cloudflare Dashboard</li>
+          <li>Add D1 binding with variable name "DB"</li>
+          <li>Refresh this page</li>
+        </ol>
+        <p><a href="/admin/db-status">Check Database Status</a></p>
+      `, 500);
+    }
+
     const db = new Database(c.env.DB);
     
     // Get basic statistics
@@ -256,6 +270,26 @@ adminRoutes.post('/init', async (c) => {
 // Database status endpoint
 adminRoutes.get('/db-status', async (c) => {
   try {
+    // Check bindings
+    const status = {
+      database_binding: !!c.env.DB,
+      cache_binding: !!c.env.CACHE,
+      bindings_status: 'incomplete'
+    };
+
+    if (!c.env.DB) {
+      return c.json({
+        ...status,
+        error: 'D1 Database binding "DB" is missing',
+        instructions: {
+          step1: 'Create D1 database in Cloudflare Dashboard',
+          step2: 'Go to Worker Settings > Variables',
+          step3: 'Add D1 database binding: Variable name = "DB"',
+          step4: 'Add KV namespace binding: Variable name = "CACHE"'
+        }
+      }, 500);
+    }
+
     const db = new Database(c.env.DB);
     
     // Check if tables exist

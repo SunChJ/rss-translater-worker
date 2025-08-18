@@ -328,18 +328,29 @@ apiRoutes.get('/stats', async (c) => {
 // Health check endpoint
 apiRoutes.get('/health', async (c) => {
   try {
-    // Test database connection
-    const db = new Database(c.env.DB);
-    await db.db.prepare('SELECT 1').first();
-    
-    return c.json({
+    const status = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       services: {
-        database: 'ok',
-        cache: c.env.CACHE ? 'ok' : 'not configured'
+        database: c.env.DB ? 'configured' : 'missing binding',
+        cache: c.env.CACHE ? 'configured' : 'missing binding'
       }
-    });
+    };
+
+    if (!c.env.DB) {
+      return c.json({
+        ...status,
+        status: 'unhealthy',
+        error: 'Database binding missing'
+      }, 503);
+    }
+
+    // Test database connection
+    const db = new Database(c.env.DB);
+    await db.db.prepare('SELECT 1').first();
+    status.services.database = 'ok';
+    
+    return c.json(status);
   } catch (error) {
     console.error('Health check failed:', error);
     return c.json({
