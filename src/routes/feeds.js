@@ -8,17 +8,29 @@ export const feedRoutes = new Hono();
 feedRoutes.get('/:slug.rss', async (c) => {
   try {
     const { slug } = c.req.param();
+    console.log('RSS request for slug:', slug);
     const db = new Database(c.env.DB);
     
     const feed = await db.getFeedBySlug(slug);
+    console.log('Feed found:', feed ? 'yes' : 'no');
     if (!feed) {
       return c.text('Feed not found', 404);
     }
 
     const entries = await db.getEntriesByFeedId(feed.id, feed.max_posts || 20);
+    console.log('Entries found:', entries.length);
+    console.log('Sample entry:', entries[0] ? {
+      id: entries[0].id,
+      title: entries[0].title,
+      translated_title: entries[0].translated_title,
+      content_length: entries[0].content?.length || 0,
+      translated_content_length: entries[0].translated_content?.length || 0
+    } : 'none');
     
     const generator = new FeedGenerator();
+    console.log('Generating RSS for feed:', feed.name, 'with', entries.length, 'entries');
     const rssXml = generator.generateRSS(feed, entries);
+    console.log('RSS XML generated, length:', rssXml.length);
     
     return c.text(rssXml, 200, {
       'Content-Type': 'application/rss+xml; charset=utf-8',
@@ -26,7 +38,8 @@ feedRoutes.get('/:slug.rss', async (c) => {
     });
   } catch (error) {
     console.error('RSS generation failed:', error);
-    return c.text('Internal server error', 500);
+    console.error('Error stack:', error.stack);
+    return c.text(`Internal server error: ${error.message}`, 500);
   }
 });
 

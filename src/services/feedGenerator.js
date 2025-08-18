@@ -1,9 +1,10 @@
 export class FeedGenerator {
   generateRSS(feed, entries) {
-    const now = new Date().toUTCString();
-    const feedTitle = this.escapeXml(feed.name || 'Unnamed Feed');
-    const feedDescription = this.escapeXml(feed.subtitle || 'RSS Translator Generated Feed');
-    const feedLink = this.escapeXml(feed.link || 'https://rsstranslator.com');
+    try {
+      const now = new Date().toUTCString();
+      const feedTitle = this.escapeXml(feed.name || 'Unnamed Feed');
+      const feedDescription = this.escapeXml(feed.subtitle || 'RSS Translator Generated Feed');
+      const feedLink = this.escapeXml(feed.link || 'https://rsstranslator.com');
     
     let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom">
@@ -17,35 +18,56 @@ export class FeedGenerator {
     <atom:link href="https://rsstranslator.com/feeds/${feed.slug}.rss" rel="self" type="application/rss+xml"/>
 `;
 
+    if (!entries || !Array.isArray(entries)) {
+      console.warn('Entries is not an array:', entries);
+      entries = [];
+    }
+
     for (const entry of entries) {
-      const title = this.formatTitle(entry, feed.translation_display);
-      const content = this.formatContent(entry, feed.translation_display);
-      const link = this.escapeXml(entry.link || '');
-      const pubDate = entry.published ? new Date(entry.published).toUTCString() : now;
-      const guid = this.escapeXml(entry.guid || entry.link || '');
-      
-      xml += `    <item>
+      try {
+        if (!entry) {
+          console.warn('Skipping null/undefined entry');
+          continue;
+        }
+        
+        const title = this.formatTitle(entry, feed.translation_display);
+        const content = this.formatContent(entry, feed.translation_display);
+        const link = this.escapeXml(entry.link || '');
+        const pubDate = entry.published ? new Date(entry.published).toUTCString() : now;
+        const guid = this.escapeXml(entry.guid || entry.link || '');
+        
+        xml += `    <item>
       <title>${this.escapeXml(title)}</title>
       <link>${link}</link>
       <description>${this.escapeXml(this.stripHtml(content))}</description>
       <content:encoded><![CDATA[${content}]]></content:encoded>
       <pubDate>${pubDate}</pubDate>
       <guid isPermaLink="false">${guid}</guid>`;
-      
-      if (entry.author) {
-        xml += `
+        
+        if (entry.author) {
+          xml += `
       <author>${this.escapeXml(entry.author)}</author>`;
-      }
-      
-      xml += `
+        }
+        
+        xml += `
     </item>
 `;
+      } catch (entryError) {
+        console.error('Error processing entry:', entryError, entry);
+        // Continue with next entry rather than failing completely
+      }
     }
 
     xml += `  </channel>
 </rss>`;
 
     return xml;
+    } catch (error) {
+      console.error('RSS generation error:', error);
+      console.error('Feed data:', feed);
+      console.error('Entries count:', entries?.length || 0);
+      throw new Error(`RSS generation failed: ${error.message}`);
+    }
   }
 
   generateAtom(feed, entries) {
@@ -143,62 +165,72 @@ export class FeedGenerator {
   }
 
   formatTitle(entry, displayMode) {
-    const original = entry.title || '';
-    const translated = entry.translated_title || '';
-    
-    switch (displayMode) {
-      case 0: // Only translation
-        return translated || original;
-      case 1: // Translation | Original
-        return translated && original && translated !== original 
-          ? `${translated} | ${original}` 
-          : (translated || original);
-      case 2: // Original | Translation
-        return translated && original && translated !== original 
-          ? `${original} | ${translated}` 
-          : (original || translated);
-      default:
-        return translated || original;
+    try {
+      const original = entry?.title || '';
+      const translated = entry?.translated_title || '';
+      
+      switch (displayMode) {
+        case 0: // Only translation
+          return translated || original || 'Untitled';
+        case 1: // Translation | Original
+          return translated && original && translated !== original 
+            ? `${translated} | ${original}` 
+            : (translated || original || 'Untitled');
+        case 2: // Original | Translation
+          return translated && original && translated !== original 
+            ? `${original} | ${translated}` 
+            : (original || translated || 'Untitled');
+        default:
+          return translated || original || 'Untitled';
+      }
+    } catch (error) {
+      console.error('Error in formatTitle:', error, entry);
+      return 'Untitled';
     }
   }
 
   formatContent(entry, displayMode) {
-    const original = entry.content || '';
-    const translated = entry.translated_content || '';
-    const summary = entry.summary || '';
-    
-    let content = '';
-    
-    switch (displayMode) {
-      case 0: // Only translation
-        content = translated || original;
-        break;
-      case 1: // Translation | Original
-        if (translated && original && translated !== original) {
-          content = `<div class="translated-content">${translated}</div>`;
-          content += `<hr><div class="original-content">${original}</div>`;
-        } else {
-          content = translated || original;
-        }
-        break;
-      case 2: // Original | Translation
-        if (translated && original && translated !== original) {
-          content = `<div class="original-content">${original}</div>`;
-          content += `<hr><div class="translated-content">${translated}</div>`;
-        } else {
-          content = original || translated;
-        }
-        break;
-      default:
-        content = translated || original;
+    try {
+      const original = entry?.content || '';
+      const translated = entry?.translated_content || '';
+      const summary = entry?.summary || '';
+      
+      let content = '';
+      
+      switch (displayMode) {
+        case 0: // Only translation
+          content = translated || original || '';
+          break;
+        case 1: // Translation | Original
+          if (translated && original && translated !== original) {
+            content = `<div class="translated-content">${translated}</div>`;
+            content += `<hr><div class="original-content">${original}</div>`;
+          } else {
+            content = translated || original || '';
+          }
+          break;
+        case 2: // Original | Translation
+          if (translated && original && translated !== original) {
+            content = `<div class="original-content">${original}</div>`;
+            content += `<hr><div class="translated-content">${translated}</div>`;
+          } else {
+            content = original || translated || '';
+          }
+          break;
+        default:
+          content = translated || original || '';
+      }
+      
+      // Add summary if available
+      if (summary) {
+        content = `<div class="summary"><strong>Summary:</strong> ${summary}</div><hr>${content}`;
+      }
+      
+      return content;
+    } catch (error) {
+      console.error('Error in formatContent:', error, entry);
+      return 'Content unavailable';
     }
-    
-    // Add summary if available
-    if (summary) {
-      content = `<div class="summary"><strong>Summary:</strong> ${summary}</div><hr>${content}`;
-    }
-    
-    return content;
   }
 
   escapeXml(text) {
