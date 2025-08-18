@@ -1004,18 +1004,18 @@ adminRoutes.get('/agents', async (c) => {
         }
         
         function deleteAgent(agentId, agentName) {
-            if (!confirm(`Are you sure you want to delete the agent "${agentName}"?\\n\\nThis action cannot be undone.`)) {
+            if (!confirm('Are you sure you want to delete the agent "' + agentName + '"?\\n\\nThis action cannot be undone.')) {
                 return;
             }
             
-            const row = document.querySelector(`#test-btn-${agentId}`).closest('tr');
+            const row = document.getElementById('test-btn-' + agentId).closest('tr');
             
             // Update row state
             row.style.opacity = '0.6';
             row.style.pointerEvents = 'none';
             
             // Send delete request
-            fetch(`/agents/${agentId}/delete`, {
+            fetch('/agents/' + agentId + '/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             })
@@ -1024,7 +1024,7 @@ adminRoutes.get('/agents', async (c) => {
                 if (data.success) {
                     // Remove the row from the table
                     row.remove();
-                    alert(`Agent "${agentName}" has been deleted successfully.`);
+                    alert('Agent "' + agentName + '" has been deleted successfully.');
                     
                     // Check if no agents left
                     const table = document.querySelector('table tbody');
