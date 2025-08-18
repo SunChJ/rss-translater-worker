@@ -13,14 +13,20 @@ ENVIRONMENT = "production"
 DEFAULT_TARGET_LANGUAGE = "Chinese Simplified"
 LOG_LEVEL = "INFO"
 
-# Note: D1 databases, KV namespaces, and secrets should be configured
-# through the Cloudflare Dashboard when deploying via GitHub integration
-# 
-# Required bindings:
-# - D1 Database: binding name "DB"
-# - KV Namespace: binding name "CACHE"
-#
-# Required secrets:
+# D1 Database configuration
+# Note: When deploying via Dashboard, configure these bindings in the UI
+[[d1_databases]]
+binding = "DB"
+database_name = "rss-translator"
+database_id = ""  # Will be set by Dashboard deployment
+
+# KV Storage configuration  
+# Note: When deploying via Dashboard, configure these bindings in the UI
+[[kv_namespaces]]
+binding = "CACHE"
+id = ""  # Will be set by Dashboard deployment
+
+# Required secrets (set via Dashboard or wrangler secret put):
 # - OPENAI_API_KEY (optional)
 # - DEEPL_API_KEY (optional) 
 # - FIELD_ENCRYPTION_KEY (required for production)

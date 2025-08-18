@@ -70,6 +70,10 @@ A Cloudflare Worker implementation of RSS Translator - translate RSS feeds using
    - Under **Service bindings**, add:
      - **D1 database binding**: Variable name `DB`, Dataset `rss-translator`
      - **KV namespace binding**: Variable name `CACHE`, KV namespace `rss-translator-cache`
+   
+   **Important**: Use exactly these names:
+   - D1 Database: `rss-translator`
+   - KV Namespace: `rss-translator-cache`
 
 9. **Set Secrets** (optional, can be done later via admin interface):
    - In **Settings** > **Variables** > **Environment Variables**:

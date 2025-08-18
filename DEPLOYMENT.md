@@ -63,11 +63,11 @@ After deployment, configure the required bindings:
 
 ### D1 Database Binding
 - Variable name: `DB`
-- D1 database: `rss-translator`
+- D1 database: `rss-translator` (must use this exact name)
 
 ### KV Namespace Binding
 - Variable name: `CACHE`
-- KV namespace: `rss-translator-cache`
+- KV namespace: `rss-translator-cache` (must use this exact name)
 
 ## Step 5: Set Environment Variables
 
