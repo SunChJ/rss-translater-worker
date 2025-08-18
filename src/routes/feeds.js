@@ -5,10 +5,19 @@ import { FeedGenerator } from '../services/feedGenerator.js';
 export const feedRoutes = new Hono();
 
 // Get translated feed by slug (RSS format)
-feedRoutes.get('/:slug.rss', async (c) => {
+feedRoutes.get(/.*\.rss$/, async (c) => {
   try {
-    const { slug } = c.req.param();
-    console.log('RSS request for slug:', slug);
+    const path = c.req.path;
+    console.log('RSS request path:', path);
+    
+    // Extract slug from path: /feeds/slug-name.rss -> slug-name
+    const pathMatch = path.match(/\/feeds\/(.+)\.rss$/);
+    if (!pathMatch) {
+      return c.text('Invalid RSS path format', 400);
+    }
+    
+    const slug = pathMatch[1];
+    console.log('Extracted slug:', slug);
     
     if (!slug) {
       return c.text('Invalid slug parameter', 400);
@@ -57,9 +66,14 @@ feedRoutes.get('/:slug.rss', async (c) => {
 });
 
 // Get translated feed by slug (Atom format)
-feedRoutes.get('/:slug.atom', async (c) => {
+feedRoutes.get(/.*\.atom$/, async (c) => {
   try {
-    const { slug } = c.req.param();
+    const path = c.req.path;
+    const pathMatch = path.match(/\/feeds\/(.+)\.atom$/);
+    if (!pathMatch) {
+      return c.text('Invalid Atom path format', 400);
+    }
+    const slug = pathMatch[1];
     const db = new Database(c.env.DB);
     
     const feed = await db.getFeedBySlug(slug);
@@ -83,9 +97,14 @@ feedRoutes.get('/:slug.atom', async (c) => {
 });
 
 // Get translated feed by slug (JSON format)
-feedRoutes.get('/:slug.json', async (c) => {
+feedRoutes.get(/.*\.json$/, async (c) => {
   try {
-    const { slug } = c.req.param();
+    const path = c.req.path;
+    const pathMatch = path.match(/\/feeds\/(.+)\.json$/);
+    if (!pathMatch) {
+      return c.json({ error: 'Invalid JSON path format' }, 400);
+    }
+    const slug = pathMatch[1];
     const db = new Database(c.env.DB);
     
     const feed = await db.getFeedBySlug(slug);
