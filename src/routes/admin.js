@@ -32,11 +32,11 @@ const commonStyles = `
     .config-section { display: none; margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 4px; }
 `;
 
-// Generate navigation
+// Generate navigation  
 function getNavigation() {
     return `
         <div class="nav">
-            <a href="/admin/">Dashboard</a>
+            <a href="/">Dashboard</a>
             <a href="/admin/feeds">RSS Feeds</a>
             <a href="/admin/agents">Translation Agents</a>
         </div>
@@ -316,7 +316,289 @@ adminRoutes.post('/feeds/add', async (c) => {
     return c.redirect('/admin/feeds');
   } catch (error) {
     console.error('Failed to create feed:', error);
-    return c.html(`<h1>Error</h1><p>Failed to create feed: ${error.message}</p>`, 500);
+    
+    // Handle specific UNIQUE constraint error
+    let errorMessage = error.message;
+    if (error.message.includes('UNIQUE constraint failed: feeds.feed_url, feeds.target_language')) {
+      errorMessage = `This RSS feed URL already exists for target language "${body.target_language}". Please use a different URL or target language.`;
+    }
+    
+    // Return to form with error message
+    const agents = await (new Database(c.env.DB)).getAgents();
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Add RSS Feed - RSS Translator Admin</title>
+    <meta charset="UTF-8">
+    <style>${commonStyles}</style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Add New RSS Feed</h1>
+            ${getNavigation()}
+        </div>
+        
+        <div style="padding: 15px; margin: 20px 0; border-radius: 4px; background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;">
+            <strong>Error:</strong> ${errorMessage}
+        </div>
+        
+        <form method="POST" action="/admin/feeds/add">
+            <div class="form-group">
+                <label class="form-label">Feed URL *</label>
+                <input type="url" name="feed_url" class="form-control" required placeholder="https://example.com/feed.rss" value="${body.feed_url || ''}">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Name (Optional)</label>
+                <input type="text" name="name" class="form-control" placeholder="Leave empty to use RSS title" value="${body.name || ''}">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Target Language</label>
+                <select name="target_language" class="form-control">
+                    <option value="Chinese Simplified" ${(body.target_language || 'Chinese Simplified') === 'Chinese Simplified' ? 'selected' : ''}>Chinese Simplified</option>
+                    <option value="Chinese Traditional" ${body.target_language === 'Chinese Traditional' ? 'selected' : ''}>Chinese Traditional</option>
+                    <option value="English" ${body.target_language === 'English' ? 'selected' : ''}>English</option>
+                    <option value="Japanese" ${body.target_language === 'Japanese' ? 'selected' : ''}>Japanese</option>
+                    <option value="Korean" ${body.target_language === 'Korean' ? 'selected' : ''}>Korean</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Max Posts</label>
+                <input type="number" name="max_posts" class="form-control" value="${body.max_posts || '20'}" min="1" max="100">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Translator</label>
+                <select name="translator_id" class="form-control">
+                    <option value="">Select a translator</option>
+                    ${agents.results?.filter(a => a.valid).map(agent => 
+                        `<option value="${agent.id}" ${body.translator_id == agent.id ? 'selected' : ''}>${agent.name} (${agent.type})</option>`
+                    ).join('') || '<option disabled>No valid agents available</option>'}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label><input type="checkbox" name="translate_title" ${body.translate_title === 'on' ? 'checked' : ''}> Translate titles</label><br>
+                <label><input type="checkbox" name="translate_content" ${body.translate_content === 'on' || !body.feed_url ? 'checked' : ''}> Translate content</label><br>
+                <label><input type="checkbox" name="summary" ${body.summary === 'on' ? 'checked' : ''}> Generate AI summary</label>
+            </div>
+            
+            <div style="margin-top: 20px;">
+                <button type="submit" class="btn btn-success">Create Feed</button>
+                <a href="/admin/feeds" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</body>
+</html>`;
+
+    return c.html(html, 400);
+  }
+});
+
+// Edit Feed Form
+adminRoutes.get('/feeds/:id/edit', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    const feedId = c.req.param('id');
+    const feed = await db.getFeedById(feedId);
+    const agents = await db.getAgents();
+    
+    if (!feed) {
+      return c.html(`<!DOCTYPE html>
+<html>
+<head><title>Feed Not Found</title><meta charset="UTF-8"><style>${commonStyles}</style></head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Feed Not Found</h1>
+            ${getNavigation()}
+        </div>
+        <p>The requested RSS feed was not found.</p>
+        <a href="/admin/feeds" class="btn">Back to Feeds</a>
+    </div>
+</body>
+</html>`, 404);
+    }
+    
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit RSS Feed - RSS Translator Admin</title>
+    <meta charset="UTF-8">
+    <style>${commonStyles}</style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Edit RSS Feed</h1>
+            ${getNavigation()}
+        </div>
+        
+        <form method="POST" action="/admin/feeds/${feed.id}/edit">
+            <div class="form-group">
+                <label class="form-label">Feed URL *</label>
+                <input type="url" name="feed_url" class="form-control" required value="${feed.feed_url}">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Name</label>
+                <input type="text" name="name" class="form-control" value="${feed.name || ''}" placeholder="Leave empty to use RSS title">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Target Language</label>
+                <select name="target_language" class="form-control">
+                    <option value="Chinese Simplified" ${feed.target_language === 'Chinese Simplified' ? 'selected' : ''}>Chinese Simplified</option>
+                    <option value="Chinese Traditional" ${feed.target_language === 'Chinese Traditional' ? 'selected' : ''}>Chinese Traditional</option>
+                    <option value="English" ${feed.target_language === 'English' ? 'selected' : ''}>English</option>
+                    <option value="Japanese" ${feed.target_language === 'Japanese' ? 'selected' : ''}>Japanese</option>
+                    <option value="Korean" ${feed.target_language === 'Korean' ? 'selected' : ''}>Korean</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Max Posts</label>
+                <input type="number" name="max_posts" class="form-control" value="${feed.max_posts || 20}" min="1" max="100">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Update Frequency (minutes)</label>
+                <input type="number" name="update_frequency" class="form-control" value="${feed.update_frequency || 30}" min="5">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Translator</label>
+                <select name="translator_id" class="form-control">
+                    <option value="">Select a translator</option>
+                    ${agents.results?.filter(a => a.valid).map(agent => 
+                        `<option value="${agent.id}" ${feed.translator_id == agent.id ? 'selected' : ''}>${agent.name} (${agent.type})</option>`
+                    ).join('') || '<option disabled>No valid agents available</option>'}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label><input type="checkbox" name="translate_title" ${feed.translate_title ? 'checked' : ''}> Translate titles</label><br>
+                <label><input type="checkbox" name="translate_content" ${feed.translate_content ? 'checked' : ''}> Translate content</label><br>
+                <label><input type="checkbox" name="summary" ${feed.summary ? 'checked' : ''}> Generate AI summary</label><br>
+                <label><input type="checkbox" name="fetch_article" ${feed.fetch_article ? 'checked' : ''}> Fetch full article content</label>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Translation Display Mode</label>
+                <select name="translation_display" class="form-control">
+                    <option value="0" ${feed.translation_display == 0 ? 'selected' : ''}>Translation only</option>
+                    <option value="1" ${feed.translation_display == 1 ? 'selected' : ''}>Translation | Original</option>
+                    <option value="2" ${feed.translation_display == 2 ? 'selected' : ''}>Original | Translation</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Additional Prompt (Optional)</label>
+                <textarea name="additional_prompt" class="form-control" rows="3" placeholder="Additional instructions for translation">${feed.additional_prompt || ''}</textarea>
+            </div>
+            
+            <div style="margin-top: 20px;">
+                <button type="submit" class="btn btn-success">Update Feed</button>
+                <a href="/admin/feeds" class="btn btn-secondary">Cancel</a>
+                <button type="button" onclick="if(confirm('Are you sure you want to delete this feed? This action cannot be undone.')) { window.location.href='/admin/feeds/${feed.id}/delete'; }" class="btn" style="background: #dc3545; margin-left: 10px;">Delete Feed</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>`;
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Edit feed form failed:', error);
+    return c.html(`<h1>Error</h1><p>Failed to load edit form: ${error.message}</p>`, 500);
+  }
+});
+
+// Handle Edit Feed Form Submission
+adminRoutes.post('/feeds/:id/edit', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    const feedId = c.req.param('id');
+    const body = await c.req.parseBody();
+    
+    const updateData = {
+      name: body.name || '',
+      feed_url: body.feed_url,
+      target_language: body.target_language || 'Chinese Simplified',
+      max_posts: parseInt(body.max_posts) || 20,
+      update_frequency: parseInt(body.update_frequency) || 30,
+      translate_title: body.translate_title === 'on',
+      translate_content: body.translate_content === 'on',
+      summary: body.summary === 'on',
+      fetch_article: body.fetch_article === 'on',
+      translator_id: body.translator_id ? parseInt(body.translator_id) : null,
+      translation_display: parseInt(body.translation_display) || 0,
+      additional_prompt: body.additional_prompt || ''
+    };
+    
+    await db.updateFeed(feedId, updateData);
+    
+    return c.redirect('/admin/feeds');
+  } catch (error) {
+    console.error('Failed to update feed:', error);
+    
+    // Handle specific errors and return to edit form with error
+    let errorMessage = error.message;
+    if (error.message.includes('UNIQUE constraint failed')) {
+      errorMessage = `This RSS feed URL already exists for the target language. Please use a different URL or target language.`;
+    }
+    
+    return c.html(`<!DOCTYPE html>
+<html>
+<head><title>Update Failed</title><meta charset="UTF-8"><style>${commonStyles}</style></head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Update Failed</h1>
+            ${getNavigation()}
+        </div>
+        <div style="padding: 15px; margin: 20px 0; border-radius: 4px; background: #f8d7da; color: #721c24;">
+            <strong>Error:</strong> ${errorMessage}
+        </div>
+        <a href="/admin/feeds/${c.req.param('id')}/edit" class="btn">Back to Edit</a>
+        <a href="/admin/feeds" class="btn btn-secondary">Back to Feeds</a>
+    </div>
+</body>
+</html>`, 400);
+  }
+});
+
+// Delete Feed
+adminRoutes.get('/feeds/:id/delete', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    const feedId = c.req.param('id');
+    
+    await db.deleteFeed(feedId);
+    
+    return c.redirect('/admin/feeds');
+  } catch (error) {
+    console.error('Failed to delete feed:', error);
+    return c.html(`<!DOCTYPE html>
+<html>
+<head><title>Delete Failed</title><meta charset="UTF-8"><style>${commonStyles}</style></head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Delete Failed</h1>
+            ${getNavigation()}
+        </div>
+        <div style="padding: 15px; margin: 20px 0; border-radius: 4px; background: #f8d7da; color: #721c24;">
+            <strong>Error:</strong> Failed to delete feed: ${error.message}
+        </div>
+        <a href="/admin/feeds" class="btn">Back to Feeds</a>
+    </div>
+</body>
+</html>`, 500);
   }
 });
 
