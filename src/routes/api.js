@@ -131,6 +131,7 @@ apiRoutes.post('/feeds/:id/translate', async (c) => {
     // Get existing entries for translation
     const entries = await db.getEntriesByFeedId(parseInt(id), 20); // Get last 20 entries
     
+    console.log('Entries found for translation:', entries.length);
     if (!entries || entries.length === 0) {
       return c.json({ error: 'No entries found to translate. Please update feed first.' }, 400);
     }
@@ -145,6 +146,7 @@ apiRoutes.post('/feeds/:id/translate', async (c) => {
     // Translate existing entries
     for (const entry of entries) {
       try {
+        console.log(`Processing entry ${entry.id}: title="${entry.title}", has_translated_content=${!!entry.translated_content}`);
         if (!entry.translated_content || !entry.translated_title) {
           const entryData = {
             title: entry.title,
@@ -155,7 +157,9 @@ apiRoutes.post('/feeds/:id/translate', async (c) => {
             guid: entry.guid
           };
           
+          console.log(`Translating entry ${entry.id} with agent ${feed.translator_id}`);
           const result = await processor.translateEntry(entryData, feed, agentManager);
+          console.log(`Translation result for entry ${entry.id}:`, result);
           
           // Update entry with translation
           await db.updateEntry(entry.id, {
@@ -168,6 +172,8 @@ apiRoutes.post('/feeds/:id/translate', async (c) => {
           totalTokensUsed += result.tokens_used || 0;
           totalCharactersUsed += result.characters_used || 0;
           translatedCount++;
+        } else {
+          console.log(`Entry ${entry.id} already translated, skipping`);
         }
       } catch (error) {
         console.error(`Failed to translate entry ${entry.id}:`, error);

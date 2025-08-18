@@ -419,7 +419,7 @@ export class FeedProcessor {
     };
 
     try {
-      const agent = agentManager.getAgentById(feedConfig.translator_id);
+      const agent = await agentManager.getAgentById(feedConfig.translator_id);
       if (!agent || !agent.valid) {
         throw new Error('Invalid or missing translator agent');
       }
@@ -464,7 +464,7 @@ export class FeedProcessor {
 
   async summarizeEntry(entry, feedConfig, agentManager) {
     try {
-      const agent = agentManager.getAgentById(feedConfig.summarizer_id);
+      const agent = await agentManager.getAgentById(feedConfig.summarizer_id);
       if (!agent || !agent.valid || !agent.isAI) {
         throw new Error('Invalid or missing summarizer agent');
       }
