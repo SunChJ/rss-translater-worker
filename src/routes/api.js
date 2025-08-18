@@ -357,20 +357,28 @@ apiRoutes.post('/agents/:id/test', async (c) => {
     
     const result = await agent.translate(text, target_language);
     
+    if (!result.success) {
+      throw new Error(result.error || 'Translation failed');
+    }
+    
     // Log successful test
     await db.addLog('info', 'translation', `Agent test completed successfully: ${agentData.name}`, {
       test_text: text,
-      translated_text: result,
-      target_language
+      translated_text: result.text,
+      target_language,
+      tokens_used: result.tokens,
+      characters_used: result.characters
     }, null, parseInt(id));
     
     return c.json({
       success: true,
-      translated_text: result,
+      translated_text: result.text,
       agent_name: agentData.name,
       agent_type: agentData.type,
       test_text: text,
-      target_language
+      target_language,
+      tokens_used: result.tokens || 0,
+      characters_used: result.characters || 0
     });
   } catch (error) {
     console.error('Agent test failed:', error);

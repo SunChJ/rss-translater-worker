@@ -343,6 +343,10 @@ export class Database {
     ).run();
   }
 
+  async deleteAgent(id) {
+    return await this.db.prepare('DELETE FROM agents WHERE id = ?').bind(id).run();
+  }
+
   // Entry methods
   async getEntriesByFeedId(feedId, limit = 50) {
     return await this.db.prepare(`

@@ -953,6 +953,7 @@ adminRoutes.get('/agents', async (c) => {
                             <td class="actions">
                                 <a href="/agents" class="btn btn-sm">Manage</a>
                                 <button onclick="testAgent(${agent.id})" class="btn btn-sm btn-success" id="test-btn-${agent.id}">Test</button>
+                                <button onclick="deleteAgent(${agent.id}, '${agent.name.replace(/'/g, "\\'")}')}" class="btn btn-sm" style="background: #dc3545; color: white;">Delete</button>
                             </td>
                         </tr>
                     `).join('')}
@@ -999,6 +1000,45 @@ adminRoutes.get('/agents', async (c) => {
                 setTimeout(() => {
                     button.innerHTML = 'Test';
                 }, 3000);
+            });
+        }
+        
+        function deleteAgent(agentId, agentName) {
+            if (!confirm(`Are you sure you want to delete the agent "${agentName}"?\\n\\nThis action cannot be undone.`)) {
+                return;
+            }
+            
+            const row = document.querySelector(`#test-btn-${agentId}`).closest('tr');
+            
+            // Update row state
+            row.style.opacity = '0.6';
+            row.style.pointerEvents = 'none';
+            
+            // Send delete request
+            fetch(`/agents/${agentId}/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Remove the row from the table
+                    row.remove();
+                    alert(`Agent "${agentName}" has been deleted successfully.`);
+                    
+                    // Check if no agents left
+                    const table = document.querySelector('table tbody');
+                    if (table && table.children.length === 0) {
+                        location.reload(); // Reload to show "no agents" message
+                    }
+                } else {
+                    throw new Error(data.error || 'Delete failed');
+                }
+            })
+            .catch(error => {
+                row.style.opacity = '1';
+                row.style.pointerEvents = 'auto';
+                alert('Failed to delete agent: ' + error.message);
             });
         }
     </script>
@@ -1567,5 +1607,57 @@ adminRoutes.get('/entries', async (c) => {
   } catch (error) {
     console.error('Entries page failed:', error);
     return c.html(`<h1>Error</h1><p>Failed to load entries: ${error.message}</p>`, 500);
+  }
+});
+
+// Delete Agent
+adminRoutes.post('/agents/:id/delete', async (c) => {
+  try {
+    const db = new Database(c.env.DB);
+    const agentId = c.req.param('id');
+    
+    // Check if agent exists
+    const agent = await db.getAgentById(parseInt(agentId));
+    if (!agent) {
+      return c.json({ success: false, error: 'Agent not found' }, 404);
+    }
+    
+    // Check if agent is being used by any feeds
+    const feedsUsingAgent = await db.db.prepare(`
+      SELECT COUNT(*) as count FROM feeds 
+      WHERE translator_id = ? OR summarizer_id = ?
+    `).bind(parseInt(agentId), parseInt(agentId)).first();
+    
+    if (feedsUsingAgent.count > 0) {
+      return c.json({ 
+        success: false, 
+        error: `Cannot delete agent "${agent.name}" because it is being used by ${feedsUsingAgent.count} feed(s). Please update or delete those feeds first.` 
+      }, 400);
+    }
+    
+    // Delete the agent
+    const result = await db.db.prepare('DELETE FROM agents WHERE id = ?').bind(parseInt(agentId)).run();
+    
+    if (result.changes > 0) {
+      // Log the deletion
+      await db.addLog('info', 'system', `Agent deleted: ${agent.name}`, {
+        agent_id: parseInt(agentId),
+        agent_name: agent.name,
+        agent_type: agent.type
+      });
+      
+      return c.json({ 
+        success: true, 
+        message: `Agent "${agent.name}" deleted successfully` 
+      });
+    } else {
+      return c.json({ success: false, error: 'Failed to delete agent' }, 500);
+    }
+  } catch (error) {
+    console.error('Failed to delete agent:', error);
+    return c.json({ 
+      success: false, 
+      error: error.message 
+    }, 500);
   }
 });
