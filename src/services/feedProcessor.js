@@ -1,5 +1,4 @@
 import { XMLParser } from 'fast-xml-parser';
-import { convert } from 'html2text';
 
 export class FeedProcessor {
   constructor(env) {
@@ -282,13 +281,20 @@ export class FeedProcessor {
   }
 
   stripHTML(html) {
-    return convert(html, {
-      wordwrap: false,
-      selectors: [
-        { selector: 'a', options: { ignoreHref: true } },
-        { selector: 'img', options: { ignoreImage: true } }
-      ]
-    });
+    if (!html) return '';
+    
+    return html
+      .replace(/<script[^>]*>.*?<\/script>/gis, '')
+      .replace(/<style[^>]*>.*?<\/style>/gis, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   async processFeed(feedConfig, agentManager) {
