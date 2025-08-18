@@ -40,9 +40,9 @@ A Cloudflare Worker implementation of RSS Translator - translate RSS feeds using
 4. **Configure build settings**
    ```
    Framework preset: None
-   Build command: npm run build (leave empty if no build needed)
-   Build output directory: / (root)
-   Root directory: /
+   Build command: npm run build
+   Build output directory: /
+   Root directory: (leave empty)
    ```
 
 5. **Set environment variables** (in Cloudflare Dashboard):
