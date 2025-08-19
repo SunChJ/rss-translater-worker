@@ -102,16 +102,34 @@ export class FeedProcessor {
     // Parse items
     const items = Array.isArray(channel.item) ? channel.item : (channel.item ? [channel.item] : []);
     
-    feed.entries = items.map(item => ({
-      title: this.extractText(item.title),
-      link: this.extractText(item.link),
-      description: this.extractText(item.description),
-      content: this.extractContent(item),
-      author: this.extractText(item.author || item['dc:creator']),
-      pubDate: this.parseDate(item.pubDate),
-      guid: this.extractText(item.guid) || this.extractText(item.link),
-      categories: this.extractCategories(item.category)
-    }));
+    feed.entries = items.map(item => {
+      // 添加原始数据调试信息
+      console.log('Raw RSS item link data:', {
+        item_link: item.link,
+        item_link_type: typeof item.link,
+        item_link_keys: item.link && typeof item.link === 'object' ? Object.keys(item.link) : 'N/A'
+      });
+      
+      const parsedEntry = {
+        title: this.extractText(item.title),
+        link: this.extractText(item.link) || this.extractText(item.guid) || '',
+        description: this.extractText(item.description),
+        content: this.extractContent(item),
+        author: this.extractText(item.author || item['dc:creator']),
+        pubDate: this.parseDate(item.pubDate),
+        guid: this.extractText(item.guid) || this.extractText(item.link),
+        categories: this.extractCategories(item.category)
+      };
+      
+      // 添加调试信息
+      console.log('Parsed RSS entry:', {
+        title: parsedEntry.title?.substring(0, 50),
+        link: parsedEntry.link || 'NO_LINK',
+        guid: parsedEntry.guid || 'NO_GUID'
+      });
+      
+      return parsedEntry;
+    });
 
     return feed;
   }
@@ -130,16 +148,34 @@ export class FeedProcessor {
     // Parse entries
     const entries = Array.isArray(feed.entry) ? feed.entry : (feed.entry ? [feed.entry] : []);
     
-    feedData.entries = entries.map(entry => ({
-      title: this.extractText(entry.title),
-      link: this.extractAtomLink(entry.link),
-      description: this.extractText(entry.summary),
-      content: this.extractAtomContent(entry),
-      author: this.extractAtomAuthor(entry.author),
-      pubDate: this.parseDate(entry.updated || entry.published),
-      guid: this.extractText(entry.id) || this.extractAtomLink(entry.link),
-      categories: this.extractAtomCategories(entry.category)
-    }));
+    feedData.entries = entries.map(entry => {
+      // 添加原始数据调试信息
+      console.log('Raw Atom entry link data:', {
+        entry_link: entry.link,
+        entry_link_type: typeof entry.link,
+        entry_link_keys: entry.link && typeof entry.link === 'object' ? Object.keys(entry.link) : 'N/A'
+      });
+      
+      const parsedEntry = {
+        title: this.extractText(entry.title),
+        link: this.extractAtomLink(entry.link) || this.extractText(entry.id) || '',
+        description: this.extractText(entry.summary),
+        content: this.extractAtomContent(entry),
+        author: this.extractAtomAuthor(entry.author),
+        pubDate: this.parseDate(entry.updated || entry.published),
+        guid: this.extractText(entry.id) || this.extractAtomLink(entry.link),
+        categories: this.extractAtomCategories(entry.category)
+      };
+      
+      // 添加调试信息
+      console.log('Parsed Atom entry:', {
+        title: parsedEntry.title?.substring(0, 50),
+        link: parsedEntry.link || 'NO_LINK',
+        guid: parsedEntry.guid || 'NO_GUID'
+      });
+      
+      return parsedEntry;
+    });
 
     return feedData;
   }
@@ -184,17 +220,31 @@ export class FeedProcessor {
   extractAtomLink(links) {
     if (!links) return '';
     
+    // 添加调试信息
+    console.log('extractAtomLink input:', {
+      links: links,
+      links_type: typeof links,
+      is_array: Array.isArray(links),
+      links_keys: links && typeof links === 'object' ? Object.keys(links) : 'N/A'
+    });
+    
     if (Array.isArray(links)) {
       // Find alternate link or use the first one
       const altLink = links.find(link => link['@_rel'] === 'alternate');
-      return altLink ? altLink['@_href'] : (links[0] ? links[0]['@_href'] : '');
+      const result = altLink ? altLink['@_href'] : (links[0] ? links[0]['@_href'] : '');
+      console.log('extractAtomLink array result:', { result, altLink, firstLink: links[0] });
+      return result;
     }
     
     if (typeof links === 'object' && links['@_href']) {
-      return links['@_href'];
+      const result = links['@_href'];
+      console.log('extractAtomLink object result:', { result, href: links['@_href'] });
+      return result;
     }
     
-    return String(links);
+    const result = String(links);
+    console.log('extractAtomLink string result:', { result, original: links });
+    return result;
   }
 
   extractAtomAuthor(author) {
@@ -577,7 +627,7 @@ export class FeedProcessor {
 
       const processedEntry = {
         title: entry.title || '',
-        link: entry.link || '',
+        link: entry.link || entry.guid || '',
         author: entry.author || '',
         content: content,
         published: entry.pubDate || new Date().toISOString(),

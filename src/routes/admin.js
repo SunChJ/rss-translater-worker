@@ -337,7 +337,7 @@ adminRoutes.get('/translation-monitor', async (c) => {
         function updateLastRefreshTime() {
             const now = new Date();
             document.getElementById('last-refresh-time').textContent = 
-                `最后刷新: ${now.toLocaleString('zh-CN')}`;
+                '最后刷新: ' + now.toLocaleString('zh-CN');
         }
         
         // 普通刷新数据

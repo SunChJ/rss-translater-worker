@@ -32,9 +32,18 @@ export class FeedGenerator {
         
         const title = this.formatTitle(entry, feed.translation_display);
         const content = this.formatContent(entry, feed.translation_display);
-        const link = this.escapeXml(entry.link || '');
+        const link = this.escapeXml(entry.link || entry.guid || '');
         const pubDate = entry.published ? new Date(entry.published).toUTCString() : now;
         const guid = this.escapeXml(entry.guid || entry.link || '');
+        
+        // 添加调试信息
+        console.log('Processing entry for RSS:', {
+          id: entry.id,
+          title: title.substring(0, 50),
+          link: entry.link || 'NO_LINK',
+          escaped_link: link,
+          guid: entry.guid || 'NO_GUID'
+        });
         
         xml += `    <item>
       <title>${this.escapeXml(title)}</title>
@@ -96,9 +105,18 @@ export class FeedGenerator {
     for (const entry of entries) {
       const title = this.formatTitle(entry, feed.translation_display);
       const content = this.formatContent(entry, feed.translation_display);
-      const link = this.escapeXml(entry.link || '');
+      const link = this.escapeXml(entry.link || entry.guid || '');
       const updated = entry.published ? new Date(entry.published).toISOString() : now;
       const entryId = this.escapeXml(entry.guid || entry.link || `${feedId}/${entry.id}`);
+      
+      // 添加调试信息
+      console.log('Processing entry for Atom:', {
+        id: entry.id,
+        title: title.substring(0, 50),
+        link: entry.link || 'NO_LINK',
+        escaped_link: link,
+        guid: entry.guid || 'NO_GUID'
+      });
       
       xml += `  <entry>
     <title>${this.escapeXml(title)}</title>
@@ -146,7 +164,7 @@ export class FeedGenerator {
         id: entry.guid || entry.link || String(entry.id),
         title: title,
         content_html: content,
-        url: entry.link || '',
+        url: entry.link || entry.guid || '',
         date_published: entry.published || new Date().toISOString()
       };
       
